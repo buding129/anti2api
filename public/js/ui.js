@@ -5,11 +5,14 @@ function showToast(message, type = 'info', title = '') {
     const titles = { success: '成功', error: '错误', warning: '警告', info: '提示' };
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
+    // 转义用户输入防止 XSS
+    const safeTitle = escapeHtml(title || titles[type]);
+    const safeMessage = escapeHtml(message);
     toast.innerHTML = `
         <div class="toast-icon">${icons[type]}</div>
         <div class="toast-content">
-            <div class="toast-title">${title || titles[type]}</div>
-            <div class="toast-message">${message}</div>
+            <div class="toast-title">${safeTitle}</div>
+            <div class="toast-message">${safeMessage}</div>
         </div>
     `;
     document.body.appendChild(toast);
@@ -23,10 +26,13 @@ function showConfirm(message, title = '确认操作') {
     return new Promise((resolve) => {
         const modal = document.createElement('div');
         modal.className = 'modal';
+        // 转义用户输入防止 XSS
+        const safeTitle = escapeHtml(title);
+        const safeMessage = escapeHtml(message);
         modal.innerHTML = `
             <div class="modal-content">
-                <div class="modal-title">${title}</div>
-                <div class="modal-message">${message}</div>
+                <div class="modal-title">${safeTitle}</div>
+                <div class="modal-message">${safeMessage}</div>
                 <div class="modal-actions">
                     <button class="btn btn-secondary" onclick="this.closest('.modal').remove(); window.modalResolve(false)">取消</button>
                     <button class="btn btn-danger" onclick="this.closest('.modal').remove(); window.modalResolve(true)">确定</button>
@@ -43,7 +49,9 @@ function showLoading(text = '处理中...') {
     const overlay = document.createElement('div');
     overlay.className = 'loading-overlay';
     overlay.id = 'loadingOverlay';
-    overlay.innerHTML = `<div class="spinner"></div><div class="loading-text">${text}</div>`;
+    // 转义用户输入防止 XSS
+    const safeText = escapeHtml(text);
+    overlay.innerHTML = `<div class="spinner"></div><div class="loading-text">${safeText}</div>`;
     document.body.appendChild(overlay);
 }
 

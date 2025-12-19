@@ -56,50 +56,58 @@ function renderTokens(tokens) {
             expiredTokensToRefresh.push(token.refresh_token);
         }
         
+        // 转义所有用户数据防止 XSS
+        const safeRefreshToken = escapeJs(token.refresh_token);
+        const safeAccessTokenSuffix = escapeHtml(token.access_token_suffix || '');
+        const safeProjectId = escapeHtml(token.projectId || '');
+        const safeEmail = escapeHtml(token.email || '');
+        const safeProjectIdJs = escapeJs(token.projectId || '');
+        const safeEmailJs = escapeJs(token.email || '');
+        
         return `
-        <div class="token-card ${!token.enable ? 'disabled' : ''} ${isExpired ? 'expired' : ''} ${isRefreshing ? 'refreshing' : ''}" id="card-${cardId}">
+        <div class="token-card ${!token.enable ? 'disabled' : ''} ${isExpired ? 'expired' : ''} ${isRefreshing ? 'refreshing' : ''}" id="card-${escapeHtml(cardId)}">
             <div class="token-header">
                 <span class="status ${token.enable ? 'enabled' : 'disabled'}">
                     ${token.enable ? '✅ 启用' : '❌ 禁用'}
                 </span>
                 <div class="token-header-right">
-                    <button class="btn-icon" onclick="showTokenDetail('${token.refresh_token}')" title="编辑全部">✏️</button>
-                    <span class="token-id">#${token.refresh_token.substring(0, 6)}</span>
+                    <button class="btn-icon" onclick="showTokenDetail('${safeRefreshToken}')" title="编辑全部">✏️</button>
+                    <span class="token-id">#${escapeHtml(token.refresh_token.substring(0, 6))}</span>
                 </div>
             </div>
             <div class="token-info">
                 <div class="info-row">
                     <span class="info-label">🎫</span>
-                    <span class="info-value sensitive-info" title="${token.access_token_suffix}">${token.access_token_suffix}</span>
+                    <span class="info-value sensitive-info" title="${safeAccessTokenSuffix}">${safeAccessTokenSuffix}</span>
                 </div>
-                <div class="info-row editable" onclick="editField(event, '${token.refresh_token}', 'projectId', '${(token.projectId || '').replace(/'/g, "\\'")}')" title="点击编辑">
+                <div class="info-row editable" onclick="editField(event, '${safeRefreshToken}', 'projectId', '${safeProjectIdJs}')" title="点击编辑">
                     <span class="info-label">📦</span>
-                    <span class="info-value sensitive-info">${token.projectId || '点击设置'}</span>
+                    <span class="info-value sensitive-info">${safeProjectId || '点击设置'}</span>
                     <span class="info-edit-icon">✏️</span>
                 </div>
-                <div class="info-row editable" onclick="editField(event, '${token.refresh_token}', 'email', '${(token.email || '').replace(/'/g, "\\'")}')" title="点击编辑">
+                <div class="info-row editable" onclick="editField(event, '${safeRefreshToken}', 'email', '${safeEmailJs}')" title="点击编辑">
                     <span class="info-label">📧</span>
-                    <span class="info-value sensitive-info">${token.email || '点击设置'}</span>
+                    <span class="info-value sensitive-info">${safeEmail || '点击设置'}</span>
                     <span class="info-edit-icon">✏️</span>
                 </div>
-                <div class="info-row ${isExpired ? 'expired-text' : ''}" id="expire-row-${cardId}">
+                <div class="info-row ${isExpired ? 'expired-text' : ''}" id="expire-row-${escapeHtml(cardId)}">
                     <span class="info-label">⏰</span>
-                    <span class="info-value">${isRefreshing ? '🔄 刷新中...' : expireStr}${isExpired && !isRefreshing ? ' (已过期)' : ''}</span>
+                    <span class="info-value">${isRefreshing ? '🔄 刷新中...' : escapeHtml(expireStr)}${isExpired && !isRefreshing ? ' (已过期)' : ''}</span>
                 </div>
             </div>
-            <div class="token-quota-inline" id="quota-inline-${cardId}">
-                <div class="quota-inline-header" onclick="toggleQuotaExpand('${cardId}', '${token.refresh_token}')">
-                    <span class="quota-inline-summary" id="quota-summary-${cardId}">📊 加载中...</span>
-                    <span class="quota-inline-toggle" id="quota-toggle-${cardId}">▼</span>
+            <div class="token-quota-inline" id="quota-inline-${escapeHtml(cardId)}">
+                <div class="quota-inline-header" onclick="toggleQuotaExpand('${escapeJs(cardId)}', '${safeRefreshToken}')">
+                    <span class="quota-inline-summary" id="quota-summary-${escapeHtml(cardId)}">📊 加载中...</span>
+                    <span class="quota-inline-toggle" id="quota-toggle-${escapeHtml(cardId)}">▼</span>
                 </div>
-                <div class="quota-inline-detail hidden" id="quota-detail-${cardId}"></div>
+                <div class="quota-inline-detail hidden" id="quota-detail-${escapeHtml(cardId)}"></div>
             </div>
             <div class="token-actions">
-                <button class="btn btn-info btn-xs" onclick="showQuotaModal('${token.refresh_token}')" title="查看额度">📊 详情</button>
-                <button class="btn ${token.enable ? 'btn-warning' : 'btn-success'} btn-xs" onclick="toggleToken('${token.refresh_token}', ${!token.enable})" title="${token.enable ? '禁用' : '启用'}">
+                <button class="btn btn-info btn-xs" onclick="showQuotaModal('${safeRefreshToken}')" title="查看额度">📊 详情</button>
+                <button class="btn ${token.enable ? 'btn-warning' : 'btn-success'} btn-xs" onclick="toggleToken('${safeRefreshToken}', ${!token.enable})" title="${token.enable ? '禁用' : '启用'}">
                     ${token.enable ? '⏸️ 禁用' : '▶️ 启用'}
                 </button>
-                <button class="btn btn-danger btn-xs" onclick="deleteToken('${token.refresh_token}')" title="删除">🗑️ 删除</button>
+                <button class="btn btn-danger btn-xs" onclick="deleteToken('${safeRefreshToken}')" title="删除">🗑️ 删除</button>
             </div>
         </div>
     `}).join('');
@@ -309,6 +317,14 @@ function showTokenDetail(refreshToken) {
         return;
     }
     
+    // 转义所有用户数据防止 XSS
+    const safeAccessToken = escapeHtml(token.access_token || '');
+    const safeRefreshToken = escapeHtml(token.refresh_token);
+    const safeRefreshTokenJs = escapeJs(refreshToken);
+    const safeProjectId = escapeHtml(token.projectId || '');
+    const safeEmail = escapeHtml(token.email || '');
+    const expireTimeStr = escapeHtml(new Date(token.timestamp + token.expires_in * 1000).toLocaleString('zh-CN'));
+    
     const modal = document.createElement('div');
     modal.className = 'modal form-modal';
     modal.innerHTML = `
@@ -316,27 +332,27 @@ function showTokenDetail(refreshToken) {
             <div class="modal-title">📝 Token详情</div>
             <div class="form-group compact">
                 <label>🎫 Access Token (只读)</label>
-                <div class="token-display">${token.access_token || ''}</div>
+                <div class="token-display">${safeAccessToken}</div>
             </div>
             <div class="form-group compact">
                 <label>🔄 Refresh Token (只读)</label>
-                <div class="token-display">${token.refresh_token}</div>
+                <div class="token-display">${safeRefreshToken}</div>
             </div>
             <div class="form-group compact">
                 <label>📦 Project ID</label>
-                <input type="text" id="editProjectId" value="${token.projectId || ''}" placeholder="项目ID">
+                <input type="text" id="editProjectId" value="${safeProjectId}" placeholder="项目ID">
             </div>
             <div class="form-group compact">
                 <label>📧 邮箱</label>
-                <input type="email" id="editEmail" value="${token.email || ''}" placeholder="账号邮箱">
+                <input type="email" id="editEmail" value="${safeEmail}" placeholder="账号邮箱">
             </div>
             <div class="form-group compact">
                 <label>⏰ 过期时间</label>
-                <input type="text" value="${new Date(token.timestamp + token.expires_in * 1000).toLocaleString('zh-CN')}" readonly style="background: var(--bg); cursor: not-allowed;">
+                <input type="text" value="${expireTimeStr}" readonly style="background: var(--bg); cursor: not-allowed;">
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">取消</button>
-                <button class="btn btn-success" onclick="saveTokenDetail('${refreshToken}')">💾 保存</button>
+                <button class="btn btn-success" onclick="saveTokenDetail('${safeRefreshTokenJs}')">💾 保存</button>
             </div>
         </div>
     `;
