@@ -11,10 +11,19 @@
     "requestCount": 50
   },
   "api": {
-    "url": "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
-    "modelsUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-    "noStreamUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent",
-    "host": "daily-cloudcode-pa.googleapis.com",
+    "use": "sandbox",
+    "sandbox": {
+      "url": "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+      "modelsUrl": "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels",
+      "noStreamUrl": "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent",
+      "host": "daily-cloudcode-pa.sandbox.googleapis.com"
+    },
+    "production": {
+      "url": "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+      "modelsUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      "noStreamUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent",
+      "host": "daily-cloudcode-pa.googleapis.com"
+    },
     "userAgent": "antigravity/1.13.3 windows/amd64"
   },
   "defaults": {
@@ -30,17 +39,18 @@
   "other": {
     "timeout": 300000,
     "retryTimes": 3,
+    "forceIPv4": false,
     "skipProjectIdFetch": false,
     "useNativeAxios": false,
     "useContextSystemPrompt": true,
     "officialPromptPosition": "before",
     "mergeSystemPrompt": false,
     "passSignatureToClient": false,
-    "debugDumpRequestResponse": false,
     "useFallbackSignature": false,
     "cacheAllSignatures": false,
     "cacheToolSignatures": true,
     "cacheImageSignatures": true,
-    "cacheThinking": true
+    "cacheThinking": true,
+    "fakeNonStream": true
   }
 }

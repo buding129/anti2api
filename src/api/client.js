@@ -19,9 +19,22 @@ import {
 } from './stream_parser.js';
 import { setSignature, shouldCacheSignature, isImageModel } from '../utils/thoughtSignatureCache.js';
 
-// 请求客户端：优先使用 AntigravityRequester，失败则降级到 axios
+// 请求客户端：优先使用 AntigravityRequester，失败则自动降级到 axios
 let requester = null;
 let useAxios = false;
+
+// 初始化请求客户端
+if (config.useNativeAxios === true) {
+  useAxios = true;
+  logger.info('使用原生 axios 请求');
+} else {
+  try {
+    requester = new AntigravityRequester();
+  } catch (error) {
+    logger.warn('AntigravityRequester 初始化失败，自动降级使用 axios:', error.message);
+    useAxios = true;
+  }
+}
 
 // ==================== 调试：最终请求/原始响应完整输出（单文件追加模式） ====================
 const DEBUG_DUMP_FILE = path.join(process.cwd(), 'data', 'debug-dump.log');
@@ -177,16 +190,6 @@ function getDefaultModelList() {
   };
 }
 
-if (config.useNativeAxios === true) {
-  useAxios = true;
-} else {
-  try {
-    requester = new AntigravityRequester();
-  } catch (error) {
-    console.warn('AntigravityRequester 初始化失败，降级使用 axios:', error.message);
-    useAxios = true;
-  }
-}
 
 // 注册对象池与模型缓存的内存清理回调
 function registerMemoryCleanup() {

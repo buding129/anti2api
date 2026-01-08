@@ -1121,20 +1121,48 @@ html.tab-logs .content {
 .loading-text { color: white; font-size: 0.875rem; font-weight: 500; }
 
 /* 帮助提示 */
-.help-tip { 
-    display: inline-flex; 
-    align-items: center; 
-    justify-content: center; 
-    width: 16px; 
-    height: 16px; 
-    border-radius: 50%; 
-    background: var(--info); 
-    color: white; 
-    font-size: 0.65rem; 
-    font-weight: 600; 
-    cursor: help; 
-    margin-left: 4px; 
+.help-tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--info);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: help;
+    margin-left: 4px;
     position: relative;
+}
+
+/* 恢复默认按钮 */
+.restore-default {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1.5px solid var(--border);
+    color: var(--text-light);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 4px;
+    transition: all 0.2s ease;
+    vertical-align: middle;
+}
+.restore-default:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+    transform: rotate(-180deg);
+}
+.restore-default:active {
+    transform: rotate(-180deg) scale(0.9);
 }
 .help-tip::before {
     content: attr(data-tooltip);

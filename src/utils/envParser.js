@@ -69,6 +69,12 @@ export function parseEnvFile(filePath) {
   return envData;
 }
 
+// 需要始终用双引号包裹的字段（避免特殊字符和换行问题）
+const QUOTE_REQUIRED_KEYS = [
+  'SYSTEM_INSTRUCTION',
+  'OFFICIAL_SYSTEM_PROMPT'
+];
+
 /**
  * 更新 .env 文件中的键值对
  * 支持多行字符串（自动用双引号包裹）
@@ -77,11 +83,15 @@ export function updateEnvFile(filePath, updates) {
   let content = fs.readFileSync(filePath, 'utf8');
   
   Object.entries(updates).forEach(([key, value]) => {
-    // 检查值是否包含换行符，如果包含则用双引号包裹
     let formattedValue = value;
-    if (typeof value === 'string' && value.includes('\n')) {
-      // 多行字符串：用双引号包裹
-      formattedValue = `"${value}"`;
+    
+    if (typeof value === 'string') {
+      // 对于需要引号的字段或包含换行符的值，用双引号包裹
+      if (QUOTE_REQUIRED_KEYS.includes(key) || value.includes('\n')) {
+        // 转义值中已有的双引号
+        const escapedValue = value.replace(/"/g, '\\"');
+        formattedValue = `"${escapedValue}"`;
+      }
     }
     
     // 匹配整个键值对（包括可能的多行值）

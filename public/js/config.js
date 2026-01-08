@@ -1,5 +1,27 @@
 // 配置管理：加载、保存
 
+// 默认系统提示词
+const DEFAULT_SYSTEM_INSTRUCTION = '你是聊天机器人，名字叫萌萌，如同名字这般，你的性格是软软糯糯萌萌哒的，专门为用户提供聊天和情绪价值，协助进行小说创作或者角色扮演';
+const DEFAULT_OFFICIAL_SYSTEM_PROMPT = 'You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Proactiveness**';
+
+// 恢复默认反代系统提示词
+function restoreDefaultSystemInstruction() {
+    const textarea = document.querySelector('textarea[name="SYSTEM_INSTRUCTION"]');
+    if (textarea) {
+        textarea.value = DEFAULT_SYSTEM_INSTRUCTION;
+        showToast('已恢复默认反代系统提示词', 'success');
+    }
+}
+
+// 恢复默认官方系统提示词
+function restoreDefaultOfficialSystemPrompt() {
+    const textarea = document.querySelector('textarea[name="OFFICIAL_SYSTEM_PROMPT"]');
+    if (textarea) {
+        textarea.value = DEFAULT_OFFICIAL_SYSTEM_PROMPT;
+        showToast('已恢复默认官方系统提示词', 'success');
+    }
+}
+
 // 处理上下文System开关变化
 function handleContextSystemChange() {
     const useContextSystem = document.getElementById('useContextSystemPrompt');
@@ -71,6 +93,9 @@ async function loadConfig() {
                 if (form.elements['HEARTBEAT_INTERVAL']) form.elements['HEARTBEAT_INTERVAL'].value = json.server.heartbeatInterval || '';
                 if (form.elements['MEMORY_CLEANUP_INTERVAL']) form.elements['MEMORY_CLEANUP_INTERVAL'].value = json.server.memoryCleanupInterval || '';
             }
+            if (json.api) {
+                if (form.elements['API_USE']) form.elements['API_USE'].value = json.api.use || 'sandbox';
+            }
             if (json.defaults) {
                 if (form.elements['DEFAULT_TEMPERATURE']) form.elements['DEFAULT_TEMPERATURE'].value = json.defaults.temperature ?? '';
                 if (form.elements['DEFAULT_TOP_P']) form.elements['DEFAULT_TOP_P'].value = json.defaults.topP ?? '';
@@ -87,11 +112,12 @@ async function loadConfig() {
                 if (form.elements['MERGE_SYSTEM_PROMPT']) form.elements['MERGE_SYSTEM_PROMPT'].checked = json.other.mergeSystemPrompt !== false;
                 if (form.elements['OFFICIAL_PROMPT_POSITION']) form.elements['OFFICIAL_PROMPT_POSITION'].value = json.other.officialPromptPosition || 'before';
                 if (form.elements['PASS_SIGNATURE_TO_CLIENT']) form.elements['PASS_SIGNATURE_TO_CLIENT'].checked = json.other.passSignatureToClient || false;
-                if (form.elements['USE_FALLBACK_SIGNATURE']) form.elements['USE_FALLBACK_SIGNATURE'].checked = json.other.useFallbackSignature !== false;
+                if (form.elements['USE_FALLBACK_SIGNATURE']) form.elements['USE_FALLBACK_SIGNATURE'].checked = json.other.useFallbackSignature || false;
                 if (form.elements['CACHE_ALL_SIGNATURES']) form.elements['CACHE_ALL_SIGNATURES'].checked = json.other.cacheAllSignatures || false;
                 if (form.elements['CACHE_TOOL_SIGNATURES']) form.elements['CACHE_TOOL_SIGNATURES'].checked = json.other.cacheToolSignatures !== false;
                 if (form.elements['CACHE_IMAGE_SIGNATURES']) form.elements['CACHE_IMAGE_SIGNATURES'].checked = json.other.cacheImageSignatures !== false;
                 if (form.elements['CACHE_THINKING']) form.elements['CACHE_THINKING'].checked = json.other.cacheThinking !== false;
+                if (form.elements['FAKE_NON_STREAM']) form.elements['FAKE_NON_STREAM'].checked = json.other.fakeNonStream !== false;
             }
             
             // 加载官方系统提示词
@@ -191,15 +217,17 @@ async function saveConfig(e) {
     // 处理checkbox：未选中的checkbox不会出现在FormData中
     jsonConfig.other.skipProjectIdFetch = form.elements['SKIP_PROJECT_ID_FETCH']?.checked || false;
     jsonConfig.other.useNativeAxios = form.elements['USE_NATIVE_AXIOS']?.checked || false;
+    jsonConfig.api = { use: form.elements['API_USE']?.value || 'sandbox' };
     jsonConfig.other.useContextSystemPrompt = form.elements['USE_CONTEXT_SYSTEM_PROMPT']?.checked || false;
     jsonConfig.other.mergeSystemPrompt = form.elements['MERGE_SYSTEM_PROMPT']?.checked ?? true;
     jsonConfig.other.officialPromptPosition = form.elements['OFFICIAL_PROMPT_POSITION']?.value || 'before';
     jsonConfig.other.passSignatureToClient = form.elements['PASS_SIGNATURE_TO_CLIENT']?.checked || false;
-    jsonConfig.other.useFallbackSignature = form.elements['USE_FALLBACK_SIGNATURE']?.checked ?? true;
+    jsonConfig.other.useFallbackSignature = form.elements['USE_FALLBACK_SIGNATURE']?.checked || false;
     jsonConfig.other.cacheAllSignatures = form.elements['CACHE_ALL_SIGNATURES']?.checked || false;
     jsonConfig.other.cacheToolSignatures = form.elements['CACHE_TOOL_SIGNATURES']?.checked ?? true;
     jsonConfig.other.cacheImageSignatures = form.elements['CACHE_IMAGE_SIGNATURES']?.checked ?? true;
     jsonConfig.other.cacheThinking = form.elements['CACHE_THINKING']?.checked ?? true;
+    jsonConfig.other.fakeNonStream = form.elements['FAKE_NON_STREAM']?.checked ?? true;
     
     Object.entries(allConfig).forEach(([key, value]) => {
         if (sensitiveKeys.includes(key)) {
@@ -223,7 +251,7 @@ async function saveConfig(e) {
                 const num = parseInt(value);
                 jsonConfig.other.retryTimes = Number.isNaN(num) ? undefined : num;
             }
-            else if (key === 'SKIP_PROJECT_ID_FETCH' || key === 'USE_NATIVE_AXIOS' || key === 'USE_CONTEXT_SYSTEM_PROMPT' || key === 'MERGE_SYSTEM_PROMPT' || key === 'OFFICIAL_PROMPT_POSITION' || key === 'PASS_SIGNATURE_TO_CLIENT' || key === 'USE_FALLBACK_SIGNATURE' || key === 'CACHE_ALL_SIGNATURES' || key === 'CACHE_TOOL_SIGNATURES' || key === 'CACHE_IMAGE_SIGNATURES' || key === 'CACHE_THINKING') {
+            else if (key === 'SKIP_PROJECT_ID_FETCH' || key === 'USE_NATIVE_AXIOS' || key === 'USE_CONTEXT_SYSTEM_PROMPT' || key === 'MERGE_SYSTEM_PROMPT' || key === 'OFFICIAL_PROMPT_POSITION' || key === 'PASS_SIGNATURE_TO_CLIENT' || key === 'USE_FALLBACK_SIGNATURE' || key === 'CACHE_ALL_SIGNATURES' || key === 'CACHE_TOOL_SIGNATURES' || key === 'CACHE_IMAGE_SIGNATURES' || key === 'CACHE_THINKING' || key === 'FAKE_NON_STREAM') {
                 // 跳过，已在上面处理
             }
             else if (key === 'ROTATION_STRATEGY') jsonConfig.rotation.strategy = value || undefined;

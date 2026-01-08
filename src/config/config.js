@@ -221,12 +221,50 @@ export function getProxyConfig() {
   return systemProxy || null;
 }
 
+// 默认 API 配置
+const DEFAULT_API_CONFIGS = {
+  sandbox: {
+    url: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse',
+    modelsUrl: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels',
+    noStreamUrl: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent',
+    host: 'daily-cloudcode-pa.sandbox.googleapis.com'
+  },
+  production: {
+    url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
+    modelsUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+    noStreamUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent',
+    host: 'daily-cloudcode-pa.googleapis.com'
+  }
+};
+
+/**
+ * 获取当前使用的 API 配置
+ * @param {Object} jsonConfig - JSON 配置对象
+ * @returns {Object} 当前 API 配置
+ */
+function getActiveApiConfig(jsonConfig) {
+  const apiUse = jsonConfig.api?.use || 'sandbox';
+  const customConfig = jsonConfig.api?.[apiUse];
+  const defaultConfig = DEFAULT_API_CONFIGS[apiUse] || DEFAULT_API_CONFIGS.sandbox;
+  
+  return {
+    use: apiUse,
+    url: customConfig?.url || defaultConfig.url,
+    modelsUrl: customConfig?.modelsUrl || defaultConfig.modelsUrl,
+    noStreamUrl: customConfig?.noStreamUrl || defaultConfig.noStreamUrl,
+    host: customConfig?.host || defaultConfig.host,
+    userAgent: jsonConfig.api?.userAgent || 'antigravity/1.13.3 windows/amd64'
+  };
+}
+
 /**
  * 从 JSON 和环境变量构建配置对象
  * @param {Object} jsonConfig - JSON 配置对象
  * @returns {Object} 完整配置对象
  */
 export function buildConfig(jsonConfig) {
+  const apiConfig = getActiveApiConfig(jsonConfig);
+  
   return {
     server: {
       port: jsonConfig.server?.port || DEFAULT_SERVER_PORT,
@@ -244,13 +282,7 @@ export function buildConfig(jsonConfig) {
     },
     imageBaseUrl: process.env.IMAGE_BASE_URL || null,
     maxImages: jsonConfig.other?.maxImages || DEFAULT_MAX_IMAGES,
-    api: {
-      url: jsonConfig.api?.url || 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      modelsUrl: jsonConfig.api?.modelsUrl || 'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
-      noStreamUrl: jsonConfig.api?.noStreamUrl || 'https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent',
-      host: jsonConfig.api?.host || 'daily-cloudcode-pa.googleapis.com',
-      userAgent: jsonConfig.api?.userAgent || 'antigravity/1.13.3 windows/amd64'
-    },
+    api: apiConfig,
     defaults: {
       temperature: jsonConfig.defaults?.temperature ?? DEFAULT_GENERATION_PARAMS.temperature,
       top_p: jsonConfig.defaults?.topP ?? DEFAULT_GENERATION_PARAMS.top_p,
@@ -264,13 +296,14 @@ export function buildConfig(jsonConfig) {
     },
     admin: getAdminCredentials(),
     useNativeAxios: jsonConfig.other?.useNativeAxios !== false,
+    forceIPv4: jsonConfig.other?.forceIPv4 === true,
     timeout: jsonConfig.other?.timeout || DEFAULT_TIMEOUT,
     retryTimes: Number.isFinite(jsonConfig.other?.retryTimes) ? jsonConfig.other.retryTimes : DEFAULT_RETRY_TIMES,
     proxy: getProxyConfig(),
-    // 反代系统提示词（从 .env 读取，可在前端修改，允许为空）
-    systemInstruction: process.env.SYSTEM_INSTRUCTION || "",
-    // 官方系统提示词（从 .env 读取，可在前端修改，为空时使用默认值）
-    officialSystemPrompt: process.env.OFFICIAL_SYSTEM_PROMPT || DEFAULT_OFFICIAL_SYSTEM_PROMPT,
+    // 反代系统提示词（从 .env 读取，可在前端修改，空字符串代表不使用）
+    systemInstruction: process.env.SYSTEM_INSTRUCTION ?? '',
+    // 官方系统提示词（从 .env 读取，可在前端修改，空字符串代表不使用）
+    officialSystemPrompt: process.env.OFFICIAL_SYSTEM_PROMPT ?? '',
     // 官方提示词位置配置：'before' = 官方提示词在反代提示词前面，'after' = 官方提示词在反代提示词后面
     officialPromptPosition: jsonConfig.other?.officialPromptPosition || 'before',
     // 是否合并系统提示词为单个 part，false 则保留多 part 结构（需要先开启 useContextSystemPrompt）
@@ -278,7 +311,7 @@ export function buildConfig(jsonConfig) {
     skipProjectIdFetch: jsonConfig.other?.skipProjectIdFetch === true,
     useContextSystemPrompt: jsonConfig.other?.useContextSystemPrompt === true,
     passSignatureToClient: jsonConfig.other?.passSignatureToClient === true,
-    useFallbackSignature: jsonConfig.other?.useFallbackSignature !== false,
+    useFallbackSignature: jsonConfig.other?.useFallbackSignature === true,
     // 签名缓存配置（新版）
     cacheAllSignatures: jsonConfig.other?.cacheAllSignatures === true ||
       process.env.CACHE_ALL_SIGNATURES === '1' ||
@@ -286,10 +319,10 @@ export function buildConfig(jsonConfig) {
     cacheToolSignatures: jsonConfig.other?.cacheToolSignatures !== false,
     cacheImageSignatures: jsonConfig.other?.cacheImageSignatures !== false,
     cacheThinking: jsonConfig.other?.cacheThinking !== false,
-    // 调试：完整打印最终请求体与原始响应（可能包含敏感内容/大体积数据）
-    debugDumpRequestResponse:
-      jsonConfig.other?.debugDumpRequestResponse === true ||
-      process.env.DEBUG_DUMP_REQUEST_RESPONSE === '1'
+    // 假非流：非流式请求使用流式获取数据后返回非流式格式（默认启用）
+    fakeNonStream: jsonConfig.other?.fakeNonStream !== false,
+    // 调试：完整打印最终请求体与原始响应（可能包含敏感内容/大体积数据，只从环境变量读取）
+    debugDumpRequestResponse: process.env.DEBUG_DUMP_REQUEST_RESPONSE === '1'
   };
 }
 

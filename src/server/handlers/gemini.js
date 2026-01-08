@@ -245,6 +245,46 @@ export const handleGeminiRequest = async (req, res, modelName, isStream) => {
         logger.error('Gemini 流式请求失败:', error.message);
         return;
       }
+    } else if (config.fakeNonStream && !isImageModel) {
+      // 假非流模式：使用流式API获取数据，组装成非流式响应
+      req.setTimeout(0);
+      res.setTimeout(0);
+      
+      let content = '';
+      let reasoningContent = '';
+      let reasoningSignature = null;
+      const toolCalls = [];
+      let usageData = null;
+      
+      try {
+        await with429Retry(
+          () => generateAssistantResponse(requestBody, token, (data) => {
+            if (data.type === 'usage') {
+              usageData = data.usage;
+            } else if (data.type === 'reasoning') {
+              reasoningContent += data.reasoning_content || '';
+              if (data.thoughtSignature) {
+                reasoningSignature = data.thoughtSignature;
+              }
+            } else if (data.type === 'tool_calls') {
+              toolCalls.push(...data.tool_calls);
+            } else if (data.type === 'text') {
+              content += data.content || '';
+            }
+          }),
+          safeRetries,
+          'gemini.fake_no_stream '
+        );
+        
+        const finishReason = "STOP";
+        const response = createGeminiResponse(content, reasoningContent || null, reasoningSignature, toolCalls, finishReason, usageData);
+        res.json(response);
+      } catch (error) {
+        logger.error('Gemini 假非流请求失败:', error.message);
+        if (res.headersSent) return;
+        const statusCode = error.statusCode || error.status || 500;
+        res.status(statusCode).json(buildGeminiErrorPayload(error, statusCode));
+      }
     } else {
       // 非流式
       req.setTimeout(0);

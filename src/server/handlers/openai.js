@@ -140,6 +140,71 @@ export const handleOpenAIRequest = async (req, res) => {
         logger.error('生成响应失败:', error.message);
         return;
       }
+    } else if (config.fakeNonStream && !isImageModel) {
+      // 假非流模式：使用流式API获取数据，组装成非流式响应
+      req.setTimeout(0);
+      res.setTimeout(0);
+      
+      let content = '';
+      let reasoningContent = '';
+      let reasoningSignature = null;
+      const toolCalls = [];
+      let usageData = null;
+      
+      try {
+        await with429Retry(
+          () => generateAssistantResponse(requestBody, token, (data) => {
+            if (data.type === 'usage') {
+              usageData = data.usage;
+            } else if (data.type === 'reasoning') {
+              reasoningContent += data.reasoning_content || '';
+              if (data.thoughtSignature) {
+                reasoningSignature = data.thoughtSignature;
+              }
+            } else if (data.type === 'tool_calls') {
+              toolCalls.push(...data.tool_calls);
+            } else if (data.type === 'text') {
+              content += data.content || '';
+            }
+          }),
+          safeRetries,
+          'chat.fake_no_stream '
+        );
+        
+        // 构建非流式响应
+        const message = { role: 'assistant' };
+        if (reasoningContent) message.reasoning_content = reasoningContent;
+        if (reasoningSignature && config.passSignatureToClient) message.thoughtSignature = reasoningSignature;
+        message.content = content;
+        
+        if (toolCalls.length > 0) {
+          if (config.passSignatureToClient) {
+            message.tool_calls = toolCalls;
+          } else {
+            message.tool_calls = toolCalls.map(({ thoughtSignature, ...rest }) => rest);
+          }
+        }
+        
+        const response = {
+          id,
+          object: 'chat.completion',
+          created,
+          model,
+          choices: [{
+            index: 0,
+            message,
+            finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop'
+          }],
+          usage: usageData
+        };
+        
+        res.json(response);
+      } catch (error) {
+        logger.error('假非流生成响应失败:', error.message);
+        if (res.headersSent) return;
+        const statusCode = error.statusCode || error.status || 500;
+        return res.status(statusCode).json(buildOpenAIErrorPayload(error, statusCode));
+      }
     } else {
       // 非流式请求：设置较长超时，避免大模型响应超时
       req.setTimeout(0); // 禁用请求超时

@@ -334,6 +334,56 @@ export const handleClaudeRequest = async (req, res, isStream) => {
         logger.error('Claude 流式请求失败:', error.message);
         return;
       }
+    } else if (config.fakeNonStream && !isImageModel) {
+      // 假非流模式：使用流式API获取数据，组装成非流式响应
+      req.setTimeout(0);
+      res.setTimeout(0);
+      
+      let content = '';
+      let reasoningContent = '';
+      let reasoningSignature = null;
+      const toolCalls = [];
+      let usageData = null;
+      
+      try {
+        await with429Retry(
+          () => generateAssistantResponse(requestBody, token, (data) => {
+            if (data.type === 'usage') {
+              usageData = data.usage;
+            } else if (data.type === 'reasoning') {
+              reasoningContent += data.reasoning_content || '';
+              if (data.thoughtSignature) {
+                reasoningSignature = data.thoughtSignature;
+              }
+            } else if (data.type === 'tool_calls') {
+              toolCalls.push(...data.tool_calls);
+            } else if (data.type === 'text') {
+              content += data.content || '';
+            }
+          }),
+          safeRetries,
+          'claude.fake_no_stream '
+        );
+        
+        const stopReason = toolCalls.length > 0 ? 'tool_use' : 'end_turn';
+        const response = createClaudeResponse(
+          msgId,
+          model,
+          content,
+          reasoningContent || null,
+          reasoningSignature,
+          toolCalls,
+          stopReason,
+          usageData
+        );
+        
+        res.json(response);
+      } catch (error) {
+        logger.error('Claude 假非流请求失败:', error.message);
+        if (res.headersSent) return;
+        const statusCode = error.statusCode || error.status || 500;
+        res.status(statusCode).json(buildClaudeErrorPayload(error, statusCode));
+      }
     } else {
       // 非流式请求
       req.setTimeout(0);

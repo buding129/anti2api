@@ -29,7 +29,7 @@ async function testRequest() {
       //tools
     );
     
-    const response = await fetch('https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent', {
+    const response = await fetch('https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent', {
       method: 'POST',
       headers: {
         'Host': config.api.host,
