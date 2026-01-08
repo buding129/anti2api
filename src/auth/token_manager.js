@@ -231,9 +231,9 @@ class TokenManager {
   async fetchProjectId(token) {
     const response = await axios(buildAxiosRequestConfig({
       method: 'POST',
-      url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist',
+      url: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist',
       headers: {
-        'Host': 'daily-cloudcode-pa.googleapis.com',
+        'Host': 'daily-cloudcode-pa.sandbox.googleapis.com',
         'User-Agent': 'antigravity/1.13.3 windows/amd64',
         'Authorization': `Bearer ${token.access_token}`,
         'Content-Type': 'application/json',
