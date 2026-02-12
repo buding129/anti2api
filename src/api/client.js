@@ -1,32 +1,29 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import tokenManager from '../auth/token_manager.js';
 import config from '../config/config.js';
+import { MODEL_LIST_CACHE_TTL } from '../constants/index.js';
 import fingerprintRequester from '../requester.js';
+import { createApiError } from '../utils/errors.js';
+import { httpRequest } from '../utils/httpClient.js';
 import { saveBase64Image } from '../utils/imageStorage.js';
 import logger from '../utils/logger.js';
 import memoryManager from '../utils/memoryManager.js';
-import { httpRequest, httpStreamRequest } from '../utils/httpClient.js';
-import { MODEL_LIST_CACHE_TTL } from '../constants/index.js';
-import { createApiError } from '../utils/errors.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { isImageModel, setSignature, shouldCacheSignature } from '../utils/thoughtSignatureCache.js';
 import {
-  convertToToolCall,
-  registerStreamMemoryCleanup
-} from './stream_parser.js';
-import { setSignature, shouldCacheSignature, isImageModel } from '../utils/thoughtSignatureCache.js';
-import {
-  isDebugDumpEnabled,
+  collectStreamChunk,
   createDumpId,
   createStreamCollector,
-  collectStreamChunk,
+  dumpFinalRawResponse,
   dumpFinalRequest,
   dumpStreamResponse,
-  dumpFinalRawResponse
+  isDebugDumpEnabled,
 } from './debugDump.js';
-import { getUpstreamStatus, readUpstreamErrorBody, isCallerDoesNotHavePermission } from './upstreamError.js';
-import { createStreamLineProcessor } from './streamLineProcessor.js';
-import { runAxiosSseStream, runNativeSseStream, postJsonAndParse } from './geminiTransport.js';
 import { parseGeminiCandidateParts, toOpenAIUsage } from './geminiResponseParser.js';
+import { postJsonAndParse, runAxiosSseStream, runNativeSseStream } from './geminiTransport.js';
+import { convertToToolCall, registerStreamMemoryCleanup } from './stream_parser.js';
+import { createStreamLineProcessor } from './streamLineProcessor.js';
+import { getUpstreamStatus, isCallerDoesNotHavePermission, readUpstreamErrorBody } from './upstreamError.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,8 +43,8 @@ if (config.useNativeAxios === true) {
 
     // 根据环境选择配置文件路径
     const configPath = isPkg
-      ? path.join(path.dirname(process.execPath), 'bin', 'tls_config.json')  // pkg 打包环境
-      : path.join(__dirname, '..', 'bin', 'tls_config.json');  // 开发环境
+      ? path.join(path.dirname(process.execPath), 'bin', 'tls_config.json') // pkg 打包环境
+      : path.join(__dirname, '..', 'bin', 'tls_config.json'); // 开发环境
     requester = fingerprintRequester.create({
       configPath,
       timeout: config.timeout ? Math.ceil(config.timeout / 1000) : 30,
@@ -90,7 +87,7 @@ const DEFAULT_MODELS = Object.freeze([
   'chat_20706',
   'rev19-uic3-1p',
   'gpt-oss-120b-medium',
-  'chat_23310'
+  'chat_23310',
 ]);
 
 // 生成默认模型列表响应
@@ -102,11 +99,10 @@ function getDefaultModelList() {
       id,
       object: 'model',
       created,
-      owned_by: 'google'
-    }))
+      owned_by: 'google',
+    })),
   };
 }
-
 
 // 注册对象池与模型缓存的内存清理回调
 function registerMemoryCleanup() {
@@ -117,7 +113,7 @@ function registerMemoryCleanup() {
   memoryManager.registerCleanup(() => {
     const ttl = getModelCacheTTL();
     const now = Date.now();
-    if (modelListCache && (now - modelListCacheTime) > ttl) {
+    if (modelListCache && now - modelListCacheTime > ttl) {
       modelListCache = null;
       modelListCacheTime = 0;
     }
@@ -131,11 +127,11 @@ registerMemoryCleanup();
 
 function buildHeaders(token) {
   return {
-    'Host': config.api.host,
+    Host: config.api.host,
     'User-Agent': config.api.userAgent,
-    'Authorization': `Bearer ${token.access_token}`,
+    Authorization: `Bearer ${token.access_token}`,
     'Content-Type': 'application/json',
-    'Accept-Encoding': 'gzip'
+    'Accept-Encoding': 'gzip',
   };
 }
 
@@ -144,12 +140,11 @@ function buildRequesterConfig(headers, body = null) {
     method: 'POST',
     headers,
     timeout_ms: config.timeout,
-    proxy: config.proxy
+    proxy: config.proxy,
   };
   if (body !== null) reqConfig.body = JSON.stringify(body);
   return reqConfig;
 }
-
 
 // 统一错误处理
 async function handleApiError(error, token, dumpId = null) {
@@ -171,11 +166,9 @@ async function handleApiError(error, token, dumpId = null) {
   throw createApiError(`API请求失败 (${status}): ${errorBody}`, status, errorBody);
 }
 
-
 // ==================== 导出函数 ====================
 
 export async function generateAssistantResponse(requestBody, token, callback) {
-
   const headers = buildHeaders(token);
   const dumpId = isDebugDumpEnabled() ? createDumpId('stream') : null;
   const streamCollector = dumpId ? createStreamCollector() : null;
@@ -188,12 +181,12 @@ export async function generateAssistantResponse(requestBody, token, callback) {
     toolCalls: [],
     reasoningSignature: null,
     sessionId: requestBody.request?.sessionId,
-    model: requestBody.model
+    model: requestBody.model,
   };
   const processor = createStreamLineProcessor({
     state,
     onEvent: callback,
-    onRawChunk: (chunk) => collectStreamChunk(streamCollector, chunk)
+    onRawChunk: chunk => collectStreamChunk(streamCollector, chunk),
   });
 
   try {
@@ -203,14 +196,17 @@ export async function generateAssistantResponse(requestBody, token, callback) {
         headers,
         data: requestBody,
         timeout: config.timeout,
-        processor
+        processor,
       });
     } else {
-      const streamResponse = requester.antigravity_fetchStream(config.api.url, buildRequesterConfig(headers, requestBody));
+      const streamResponse = requester.antigravity_fetchStream(
+        config.api.url,
+        buildRequesterConfig(headers, requestBody),
+      );
       await runNativeSseStream({
         streamResponse,
         processor,
-        onErrorChunk: (chunk) => collectStreamChunk(streamCollector, chunk)
+        onErrorChunk: chunk => collectStreamChunk(streamCollector, chunk),
       });
     }
 
@@ -219,7 +215,9 @@ export async function generateAssistantResponse(requestBody, token, callback) {
       await dumpStreamResponse(dumpId, streamCollector);
     }
   } catch (error) {
-    try { processor.close(); } catch { }
+    try {
+      processor.close();
+    } catch {}
     await handleApiError(error, token, dumpId);
   }
 }
@@ -232,7 +230,7 @@ async function fetchRawModels(headers, token) {
         method: 'POST',
         url: config.api.modelsUrl,
         headers,
-        data: {}
+        data: {},
       });
       return response.data;
     }
@@ -251,7 +249,7 @@ export async function getAvailableModels() {
   // 检查缓存是否有效（动态 TTL）
   const now = Date.now();
   const ttl = getModelCacheTTL();
-  if (modelListCache && (now - modelListCacheTime) < ttl) {
+  if (modelListCache && now - modelListCacheTime < ttl) {
     return modelListCache;
   }
 
@@ -274,7 +272,7 @@ export async function getAvailableModels() {
     id,
     object: 'model',
     created,
-    owned_by: 'google'
+    owned_by: 'google',
   }));
 
   // 添加默认模型（如果 API 返回的列表中没有）
@@ -285,14 +283,14 @@ export async function getAvailableModels() {
         id: defaultModel,
         object: 'model',
         created,
-        owned_by: 'google'
+        owned_by: 'google',
       });
     }
   }
 
   const result = {
     object: 'list',
-    data: modelList
+    data: modelList,
   };
 
   // 更新缓存
@@ -321,7 +319,7 @@ export async function getModelsWithQuotas(token) {
     if (modelData.quotaInfo) {
       quotas[modelId] = {
         r: modelData.quotaInfo.remainingFraction,
-        t: modelData.quotaInfo.resetTime
+        t: modelData.quotaInfo.resetTime,
       };
     }
   });
@@ -330,7 +328,6 @@ export async function getModelsWithQuotas(token) {
 }
 
 export async function generateAssistantResponseNoStream(requestBody, token) {
-
   const headers = buildHeaders(token);
   const dumpId = isDebugDumpEnabled() ? createDumpId('no_stream') : null;
   if (dumpId) await dumpFinalRequest(dumpId, requestBody);
@@ -346,7 +343,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
       requesterConfig: buildRequesterConfig(headers, requestBody),
       dumpId,
       dumpFinalRawResponse,
-      rawFormat: 'json'
+      rawFormat: 'json',
     });
   } catch (error) {
     await handleApiError(error, token, dumpId);
@@ -358,7 +355,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
     sessionId: requestBody.request?.sessionId,
     model: requestBody.model,
     convertToToolCall,
-    saveBase64Image
+    saveBase64Image,
   });
 
   const usageData = toOpenAIUsage(data.response?.usageMetadata);
@@ -391,14 +388,40 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
     }
   }
 
-  // 生图模型：转换为 markdown 格式
+  // 生图模型：根据配置决定返回格式
   if (parsed.imageUrls.length > 0) {
+    // 开关开启：直接返回 base64(data URI) 文本，不落盘、不生成 Markdown 图片链接
+    if (config.imageReturnBase64 === true) {
+      const payload = parsed.imageUrls.join('\n\n');
+      const content = parsed.content ? parsed.content + '\n\n' + payload : payload;
+      return {
+        content,
+        reasoningContent: parsed.reasoningContent,
+        reasoningSignature: parsed.reasoningSignature,
+        toolCalls: parsed.toolCalls,
+        usage: usageData,
+      };
+    }
+
+    // 默认行为：保存到本地并返回 markdown 图片链接
     let markdown = parsed.content ? parsed.content + '\n\n' : '';
     markdown += parsed.imageUrls.map(url => `![image](${url})`).join('\n\n');
-    return { content: markdown, reasoningContent: parsed.reasoningContent, reasoningSignature: parsed.reasoningSignature, toolCalls: parsed.toolCalls, usage: usageData };
+    return {
+      content: markdown,
+      reasoningContent: parsed.reasoningContent,
+      reasoningSignature: parsed.reasoningSignature,
+      toolCalls: parsed.toolCalls,
+      usage: usageData,
+    };
   }
 
-  return { content: parsed.content, reasoningContent: parsed.reasoningContent, reasoningSignature: parsed.reasoningSignature, toolCalls: parsed.toolCalls, usage: usageData };
+  return {
+    content: parsed.content,
+    reasoningContent: parsed.reasoningContent,
+    reasoningSignature: parsed.reasoningSignature,
+    toolCalls: parsed.toolCalls,
+    usage: usageData,
+  };
 }
 
 export async function generateImageForSD(requestBody, token) {
@@ -408,14 +431,19 @@ export async function generateImageForSD(requestBody, token) {
 
   try {
     if (useAxios) {
-      data = (await httpRequest({
-        method: 'POST',
-        url: config.api.noStreamUrl,
-        headers,
-        data: requestBody
-      })).data;
+      data = (
+        await httpRequest({
+          method: 'POST',
+          url: config.api.noStreamUrl,
+          headers,
+          data: requestBody,
+        })
+      ).data;
     } else {
-      const response = await requester.antigravity_fetch(config.api.noStreamUrl, buildRequesterConfig(headers, requestBody));
+      const response = await requester.antigravity_fetch(
+        config.api.noStreamUrl,
+        buildRequesterConfig(headers, requestBody),
+      );
       if (response.status !== 200) {
         const errorBody = await response.text();
         throw { status: response.status, message: errorBody };

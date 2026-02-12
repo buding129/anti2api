@@ -10,7 +10,7 @@ if exist "antigravity2api-nodejs" (
     pause
     exit /b 1
 )
-git clone https://github.com/liuw1535/antigravity2api-nodejs.git
+git clone https://github.com/buding129/anti2api antigravity2api-nodejs
 if errorlevel 1 (
     echo Failed to clone repository
     pause
