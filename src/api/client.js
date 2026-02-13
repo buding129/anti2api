@@ -414,10 +414,10 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
   if (parsed.imageUrls.length > 0) {
     const prefixText = parsed.content ? parsed.content + '\n\n' : '';
 
-    // 开关：直接返回 data:image/...;base64,...（不落盘、不生成 markdown 链接）
+    // 开关：直接返回 data:image/...;base64,...（不落盘；用 Markdown 图片语法便于界面直接渲染）
     if (config.imageReturnBase64 === true) {
       return {
-        content: prefixText + parsed.imageUrls.join('\n\n'),
+        content: prefixText + parsed.imageUrls.map(url => `![image](${url})`).join('\n\n'),
         reasoningContent: parsed.reasoningContent,
         reasoningSignature: parsed.reasoningSignature,
         toolCalls: parsed.toolCalls,
