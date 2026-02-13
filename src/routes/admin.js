@@ -1,19 +1,18 @@
 import express from 'express';
-import { generateToken, authMiddleware, verifyToken } from '../auth/jwt.js';
-import tokenManager from '../auth/token_manager.js';
+import { getModelsWithQuotas } from '../api/client.js';
 import geminicliTokenManager from '../auth/geminicli_token_manager.js';
-import quotaManager from '../auth/quota_manager.js';
+import { generateToken, verifyToken } from '../auth/jwt.js';
 import oauthManager from '../auth/oauth_manager.js';
+import quotaManager from '../auth/quota_manager.js';
+import tokenManager from '../auth/token_manager.js';
 import config, { getConfigJson, saveConfigJson } from '../config/config.js';
-import logger from '../utils/logger.js';
-import memoryManager from '../utils/memoryManager.js';
-import { parseEnvFile, updateEnvFile } from '../utils/envParser.js';
 import { reloadConfig } from '../utils/configReloader.js';
 import { deepMerge } from '../utils/deepMerge.js';
-import { getModelsWithQuotas } from '../api/client.js';
-import { getEnvPath } from '../utils/paths.js';
+import { parseEnvFile, updateEnvFile } from '../utils/envParser.js';
 import ipBlockManager from '../utils/ipBlockManager.js';
-import dotenv from 'dotenv';
+import logger from '../utils/logger.js';
+import memoryManager from '../utils/memoryManager.js';
+import { getEnvPath } from '../utils/paths.js';
 
 const envPath = getEnvPath();
 
@@ -32,7 +31,7 @@ const COOKIE_OPTIONS = {
   httpOnly: true,
   // secure: process.env.NODE_ENV === 'production', // 移除静态配置，改为动态判断
   sameSite: 'strict',
-  maxAge: 24 * 60 * 60 * 1000 // 24小时
+  maxAge: 24 * 60 * 60 * 1000, // 24小时
 };
 
 // 从 Cookie 或 Header 获取 JWT Token 的中间件
@@ -58,7 +57,7 @@ const cookieAuthMiddleware = (req, res, next) => {
     // 清除无效的 Cookie
     res.clearCookie('authToken', {
       ...COOKIE_OPTIONS,
-      secure: req.secure || process.env.NODE_ENV === 'production'
+      secure: req.secure || process.env.NODE_ENV === 'production',
     });
     return res.status(401).json({ error: 'Invalid token' });
   }
@@ -66,11 +65,13 @@ const cookieAuthMiddleware = (req, res, next) => {
 
 // 获取客户端 IP
 function getClientIP(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+  return (
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
     req.headers['x-real-ip'] ||
     req.connection?.remoteAddress ||
     req.ip ||
-    'unknown';
+    'unknown'
+  );
 }
 
 // 登录接口
@@ -87,7 +88,7 @@ router.post('/login', async (req, res) => {
     return res.status(429).json({
       success: false,
       message: `登录尝试过多，请 ${remainingMinutes} 分钟后重试`,
-      retryAfter: remainingMinutes * 60
+      retryAfter: remainingMinutes * 60,
     });
   }
 
@@ -110,7 +111,7 @@ router.post('/login', async (req, res) => {
     // 动态设置 secure: 如果通过 https 访问 (req.secure) 或在生产环境，则启用 secure
     res.cookie('authToken', token, {
       ...COOKIE_OPTIONS,
-      secure: req.secure || process.env.NODE_ENV === 'production'
+      secure: req.secure || process.env.NODE_ENV === 'production',
     });
 
     // 同时返回 token（兼容旧版本前端）
@@ -128,7 +129,7 @@ router.post('/login', async (req, res) => {
 router.post('/logout', (req, res) => {
   res.clearCookie('authToken', {
     ...COOKIE_OPTIONS,
-    secure: req.secure || process.env.NODE_ENV === 'production'
+    secure: req.secure || process.env.NODE_ENV === 'production',
   });
   res.json({ success: true, message: '已登出' });
 });
@@ -264,8 +265,8 @@ router.post('/tokens/export', cookieAuthMiddleware, async (req, res) => {
         enable: token.enable,
         projectId: token.projectId,
         email: token.email,
-        hasQuota: token.hasQuota
-      }))
+        hasQuota: token.hasQuota,
+      })),
     };
 
     res.json({ success: true, data: exportData });
@@ -389,7 +390,7 @@ function deriveExpiresInAndTimestamp({ expires_in, expiry, timestamp }) {
 
   return {
     expires_in: finalExpiresIn ?? 3599,
-    timestamp: finalTimestamp
+    timestamp: finalTimestamp,
   };
 }
 
@@ -405,7 +406,10 @@ function smartParseGeminiCliToken(rawToken) {
   const access_token = findFieldByKeyword(rawToken, 'access') || rawToken.token;
   const email = findFieldByKeyword(rawToken, 'email') || findFieldByKeyword(rawToken, 'mail');
   const expires_in = findFieldByKeyword(rawToken, 'expires') || findFieldByKeyword(rawToken, 'expire');
-  const timestamp = findFieldByKeyword(rawToken, 'time') || findFieldByKeyword(rawToken, 'stamp') || findFieldByKeyword(rawToken, 'created');
+  const timestamp =
+    findFieldByKeyword(rawToken, 'time') ||
+    findFieldByKeyword(rawToken, 'stamp') ||
+    findFieldByKeyword(rawToken, 'created');
   const expiry = findFieldByKeyword(rawToken, 'expiry') || findFieldByKeyword(rawToken, 'expiresat');
   const projectId = findFieldByKeyword(rawToken, 'project');
 
@@ -483,7 +487,7 @@ router.post('/tokens/import', cookieAuthMiddleware, async (req, res) => {
     res.json({
       success: true,
       message: `导入完成：新增 ${addedCount} 个，更新 ${updatedCount} 个，跳过 ${skippedCount} 个`,
-      data: { added: addedCount, updated: updatedCount, skipped: skippedCount }
+      data: { added: addedCount, updated: updatedCount, skipped: skippedCount },
     });
   } catch (error) {
     logger.error('导入Token失败:', error.message);
@@ -499,15 +503,13 @@ router.post('/oauth/exchange', cookieAuthMiddleware, async (req, res) => {
 
   try {
     const account = await oauthManager.authenticate(code, port, mode);
-    
+
     if (mode === 'geminicli') {
       // Gemini CLI 模式
       res.json({ success: true, data: account, message: 'Gemini CLI Token添加成功' });
     } else {
       // Antigravity 模式
-      const message = account.hasQuota
-        ? 'Token添加成功'
-        : 'Token添加成功（该账号无资格，已自动使用随机ProjectId）';
+      const message = account.hasQuota ? 'Token添加成功' : 'Token添加成功（该账号无资格，已自动使用随机ProjectId）';
       res.json({ success: true, data: account, message, fallbackMode: !account.hasQuota });
     }
   } catch (error) {
@@ -538,7 +540,7 @@ router.put('/config', cookieAuthMiddleware, (req, res) => {
     if (envUpdates && envUpdates.OFFICIAL_SYSTEM_PROMPT !== undefined) {
       const currentEnv = parseEnvFile(envPath);
       // 正规化换行符后再比较（避免 \r\n 和 \n 不一致导致误判）
-      const normalizeNewlines = (str) => (str || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+      const normalizeNewlines = str => (str || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
       const newValue = normalizeNewlines(envUpdates.OFFICIAL_SYSTEM_PROMPT);
       const oldValue = normalizeNewlines(currentEnv.OFFICIAL_SYSTEM_PROMPT);
 
@@ -548,7 +550,7 @@ router.put('/config', cookieAuthMiddleware, (req, res) => {
           logger.warn(`尝试修改官方系统提示词但密码验证失败 IP: ${getClientIP(req)}`);
           return res.status(403).json({
             success: false,
-            message: '修改官方系统提示词需要验证管理员密码'
+            message: '修改官方系统提示词需要验证管理员密码',
           });
         }
       }
@@ -557,7 +559,29 @@ router.put('/config', cookieAuthMiddleware, (req, res) => {
     if (envUpdates) updateEnvFile(envPath, envUpdates);
     if (jsonUpdates) saveConfigJson(deepMerge(getConfigJson(), jsonUpdates));
 
-    dotenv.config({ override: true });
+    // 重新从磁盘读取 .env，并写回 process.env
+    // 修复：dotenv 对包含双引号的多行值（如 <example_only do_not_follow="true"...>）会解析截断
+    const diskEnv = parseEnvFile(envPath);
+
+    // 与 config.js 保持一致：将字符串中的 \n 转为实际换行
+    const processEscapeChars = value => {
+      if (value === undefined || value === null) return value;
+      return String(value)
+        .replace(/\\\\n/g, '\n') // 先处理双重转义 \\n -> 换行
+        .replace(/\\n/g, '\n'); // 再处理单重转义 \n -> 换行
+    };
+
+    if (diskEnv.SYSTEM_INSTRUCTION !== undefined) {
+      diskEnv.SYSTEM_INSTRUCTION = processEscapeChars(diskEnv.SYSTEM_INSTRUCTION);
+    }
+    if (diskEnv.OFFICIAL_SYSTEM_PROMPT !== undefined) {
+      diskEnv.OFFICIAL_SYSTEM_PROMPT = processEscapeChars(diskEnv.OFFICIAL_SYSTEM_PROMPT);
+    }
+
+    for (const [key, value] of Object.entries(diskEnv)) {
+      process.env[key] = value;
+    }
+
     reloadConfig();
 
     // 应用可热更新的运行时配置
@@ -592,7 +616,7 @@ router.put('/rotation', cookieAuthMiddleware, (req, res) => {
     if (strategy && !validStrategies.includes(strategy)) {
       return res.status(400).json({
         success: false,
-        message: `无效的策略，可选值: ${validStrategies.join(', ')}`
+        message: `无效的策略，可选值: ${validStrategies.join(', ')}`,
       });
     }
 
@@ -627,7 +651,7 @@ router.get('/logs', cookieAuthMiddleware, (req, res) => {
       level: level || 'all',
       search: search || '',
       limit: parseInt(limit) || 100,
-      offset: parseInt(offset) || 0
+      offset: parseInt(offset) || 0,
     };
 
     const result = logger.getLogs(options);
@@ -791,8 +815,8 @@ router.post('/geminicli/tokens/export', cookieAuthMiddleware, async (req, res) =
         timestamp: token.timestamp,
         enable: token.enable,
         email: token.email,
-        projectId: token.projectId
-      }))
+        projectId: token.projectId,
+      })),
     };
 
     res.json({ success: true, data: exportData });
@@ -858,7 +882,7 @@ router.post('/geminicli/tokens/import', cookieAuthMiddleware, async (req, res) =
     res.json({
       success: true,
       message: `导入完成：新增 ${addedCount} 个，更新 ${updatedCount} 个，跳过 ${skippedCount} 个`,
-      data: { added: addedCount, updated: updatedCount, skipped: skippedCount }
+      data: { added: addedCount, updated: updatedCount, skipped: skippedCount },
     });
   } catch (error) {
     logger.error('[GeminiCLI] 导入Token失败:', error.message);
@@ -997,7 +1021,9 @@ router.get('/tokens/:tokenId/quotas', cookieAuthMiddleware, async (req, res) => 
         } catch (error) {
           logger.error('刷新token失败:', error.message);
           // 使用 400 而不是 401，避免前端误认为 JWT 登录过期
-          return res.status(400).json({ success: false, message: 'Google Token已过期且刷新失败，请重新登录Google账号' });
+          return res
+            .status(400)
+            .json({ success: false, message: 'Google Token已过期且刷新失败，请重新登录Google账号' });
         }
       }
 
@@ -1020,7 +1046,7 @@ router.get('/tokens/:tokenId/quotas', cookieAuthMiddleware, async (req, res) => 
       modelsWithBeijingTime[modelId] = {
         remaining: quota.r,
         resetTime: quotaManager.convertToBeijingTime(quota.t),
-        resetTimeRaw: quota.t
+        resetTimeRaw: quota.t,
       };
     });
 
@@ -1032,8 +1058,8 @@ router.get('/tokens/:tokenId/quotas', cookieAuthMiddleware, async (req, res) => 
       data: {
         lastUpdated: quotaData.lastUpdated,
         models: modelsWithBeijingTime,
-        requestCounts // 返回请求计数供前端计算预估
-      }
+        requestCounts, // 返回请求计数供前端计算预估
+      },
     });
   } catch (error) {
     logger.error('获取额度失败:', error.message);

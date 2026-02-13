@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import tokenManager from '../auth/token_manager.js';
@@ -125,14 +126,35 @@ registerMemoryCleanup();
 
 // ==================== 辅助函数 ====================
 
-function buildHeaders(token) {
-  return {
+function buildHeaders(token, requestBody = null) {
+  const uuid =
+    typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const headers = {
     Host: config.api.host,
     'User-Agent': config.api.userAgent,
     Authorization: `Bearer ${token.access_token}`,
     'Content-Type': 'application/json',
     'Accept-Encoding': 'gzip',
+    requestId: `req-${uuid}`,
   };
+
+  // Antigravity 会通过 requestType 区分 agent / image_gen
+  // 对齐 gcli2api：优先使用请求体里的 requestType，不存在时按 model 兜底推断
+  if (requestBody) {
+    const requestType =
+      requestBody.requestType ||
+      (String(requestBody.model || '')
+        .toLowerCase()
+        .includes('image')
+        ? 'image_gen'
+        : 'agent');
+    headers['requestType'] = requestType;
+  }
+
+  return headers;
 }
 
 function buildRequesterConfig(headers, body = null) {
@@ -169,7 +191,7 @@ async function handleApiError(error, token, dumpId = null) {
 // ==================== 导出函数 ====================
 
 export async function generateAssistantResponse(requestBody, token, callback) {
-  const headers = buildHeaders(token);
+  const headers = buildHeaders(token, requestBody);
   const dumpId = isDebugDumpEnabled() ? createDumpId('stream') : null;
   const streamCollector = dumpId ? createStreamCollector() : null;
   if (dumpId) {
@@ -328,7 +350,7 @@ export async function getModelsWithQuotas(token) {
 }
 
 export async function generateAssistantResponseNoStream(requestBody, token) {
-  const headers = buildHeaders(token);
+  const headers = buildHeaders(token, requestBody);
   const dumpId = isDebugDumpEnabled() ? createDumpId('no_stream') : null;
   if (dumpId) await dumpFinalRequest(dumpId, requestBody);
   let data;
@@ -388,22 +410,8 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
     }
   }
 
-  // 生图模型：根据配置决定返回格式
+  // 生图模型：转换为 markdown 格式
   if (parsed.imageUrls.length > 0) {
-    // 开关开启：直接返回 base64(data URI) 文本，不落盘、不生成 Markdown 图片链接
-    if (config.imageReturnBase64 === true) {
-      const payload = parsed.imageUrls.join('\n\n');
-      const content = parsed.content ? parsed.content + '\n\n' + payload : payload;
-      return {
-        content,
-        reasoningContent: parsed.reasoningContent,
-        reasoningSignature: parsed.reasoningSignature,
-        toolCalls: parsed.toolCalls,
-        usage: usageData,
-      };
-    }
-
-    // 默认行为：保存到本地并返回 markdown 图片链接
     let markdown = parsed.content ? parsed.content + '\n\n' : '';
     markdown += parsed.imageUrls.map(url => `![image](${url})`).join('\n\n');
     return {
@@ -425,7 +433,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
 }
 
 export async function generateImageForSD(requestBody, token) {
-  const headers = buildHeaders(token);
+  const headers = buildHeaders(token, requestBody);
   let data;
   //console.log(JSON.stringify(requestBody,null,2));
 

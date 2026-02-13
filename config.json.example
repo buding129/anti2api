@@ -56,7 +56,6 @@
     "cacheToolSignatures": true,
     "cacheImageSignatures": true,
     "cacheThinking": true,
-    "imageReturnBase64": false,
     "fakeNonStream": true
   }
 }

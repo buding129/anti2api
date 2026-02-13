@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import config from '../config/config.js';
-import { MIME_TO_EXT } from '../constants/index.js';
-import { getImageDir, isPkg } from './paths.js';
 import { getDefaultIp } from './utils.js';
+import { getImageDir, isPkg } from './paths.js';
+import { MIME_TO_EXT } from '../constants/index.js';
 
 const IMAGE_DIR = getImageDir();
 
@@ -17,13 +17,12 @@ if (!isPkg && !fs.existsSync(IMAGE_DIR)) {
  * @param {number} maxCount - 最大保留图片数量
  */
 function cleanOldImages(maxCount = 10) {
-  const files = fs
-    .readdirSync(IMAGE_DIR)
+  const files = fs.readdirSync(IMAGE_DIR)
     .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
     .map(f => ({
       name: f,
       path: path.join(IMAGE_DIR, f),
-      mtime: fs.statSync(path.join(IMAGE_DIR, f)).mtime.getTime(),
+      mtime: fs.statSync(path.join(IMAGE_DIR, f)).mtime.getTime()
     }))
     .sort((a, b) => b.mtime - a.mtime);
 
@@ -39,22 +38,17 @@ function cleanOldImages(maxCount = 10) {
  * @returns {string} 图片访问 URL
  */
 export function saveBase64Image(base64Data, mimeType) {
-  if (config.imageReturnBase64 === true) {
-    const safeMimeType = mimeType || 'image/jpeg';
-    return `data:${safeMimeType};base64,${base64Data}`;
-  }
-
   const ext = MIME_TO_EXT[mimeType] || 'jpg';
   const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`;
   const filepath = path.join(IMAGE_DIR, filename);
-
+  
   // 解码并保存
   const buffer = Buffer.from(base64Data, 'base64');
   fs.writeFileSync(filepath, buffer);
-
+  
   // 清理旧图片
   cleanOldImages(config.maxImages);
-
+  
   // 返回访问 URL
   const baseUrl = config.imageBaseUrl || `http://${getDefaultIp()}:${config.server.port}`;
   return `${baseUrl}/images/${filename}`;
