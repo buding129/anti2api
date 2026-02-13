@@ -410,9 +410,22 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
     }
   }
 
-  // 生图模型：转换为 markdown 格式
+  // 生图模型：按配置返回 base64 或 markdown
   if (parsed.imageUrls.length > 0) {
-    let markdown = parsed.content ? parsed.content + '\n\n' : '';
+    const prefixText = parsed.content ? parsed.content + '\n\n' : '';
+
+    // 开关：直接返回 data:image/...;base64,...（不落盘、不生成 markdown 链接）
+    if (config.imageReturnBase64 === true) {
+      return {
+        content: prefixText + parsed.imageUrls.join('\n\n'),
+        reasoningContent: parsed.reasoningContent,
+        reasoningSignature: parsed.reasoningSignature,
+        toolCalls: parsed.toolCalls,
+        usage: usageData,
+      };
+    }
+
+    let markdown = prefixText;
     markdown += parsed.imageUrls.map(url => `![image](${url})`).join('\n\n');
     return {
       content: markdown,

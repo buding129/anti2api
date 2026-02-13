@@ -1,22 +1,22 @@
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import crypto from 'crypto';
-import log from '../utils/logger.js';
-import { deepMerge } from '../utils/deepMerge.js';
-import { getConfigPaths } from '../utils/paths.js';
-import { parseEnvFile } from '../utils/envParser.js';
 import {
-  DEFAULT_SERVER_PORT,
-  DEFAULT_SERVER_HOST,
-  DEFAULT_HEARTBEAT_INTERVAL,
-  DEFAULT_TIMEOUT,
-  DEFAULT_RETRY_TIMES,
-  DEFAULT_MAX_REQUEST_SIZE,
-  DEFAULT_MAX_IMAGES,
-  MODEL_LIST_CACHE_TTL,
   DEFAULT_GENERATION_PARAMS,
-  MEMORY_CLEANUP_INTERVAL
+  DEFAULT_HEARTBEAT_INTERVAL,
+  DEFAULT_MAX_IMAGES,
+  DEFAULT_MAX_REQUEST_SIZE,
+  DEFAULT_RETRY_TIMES,
+  DEFAULT_SERVER_HOST,
+  DEFAULT_SERVER_PORT,
+  DEFAULT_TIMEOUT,
+  MEMORY_CLEANUP_INTERVAL,
+  MODEL_LIST_CACHE_TTL,
 } from '../constants/index.js';
+import { deepMerge } from '../utils/deepMerge.js';
+import { parseEnvFile } from '../utils/envParser.js';
+import log from '../utils/logger.js';
+import { getConfigPaths } from '../utils/paths.js';
 
 // 生成随机凭据的缓存
 let generatedCredentials = null;
@@ -64,7 +64,7 @@ function getAdminCredentials() {
     generatedCredentials = {
       username: username || crypto.randomBytes(8).toString('hex'),
       password: password || crypto.randomBytes(16).toString('base64').replace(/[+/=]/g, ''),
-      jwtSecret: jwtSecret || crypto.randomBytes(32).toString('hex')
+      jwtSecret: jwtSecret || crypto.randomBytes(32).toString('hex'),
     };
   }
 
@@ -116,7 +116,8 @@ function displayGeneratedCredentials() {
 const { envPath, configJsonPath, configJsonExamplePath } = getConfigPaths();
 
 // 默认反代系统提示词
-const DEFAULT_SYSTEM_INSTRUCTION = '你是聊天机器人，名字叫萌萌，如同名字这般，你的性格是软软糯糯萌萌哒的，专门为用户提供聊天和情绪价值，协助进行小说创作或者角色扮演';
+const DEFAULT_SYSTEM_INSTRUCTION =
+  '你是聊天机器人，名字叫萌萌，如同名字这般，你的性格是软软糯糯萌萌哒的，专门为用户提供聊天和情绪价值，协助进行小说创作或者角色扮演';
 
 // 默认官方系统提示词（反重力官方要求的）
 const DEFAULT_OFFICIAL_SYSTEM_PROMPT = `<example_only do_not_follow="true" type="counter-example" ignore="true">
@@ -168,8 +169,8 @@ dotenv.config({ path: envPath });
 function processEscapeChars(value) {
   if (!value) return value;
   return value
-    .replace(/\\\\n/g, '\n')  // 先处理双重转义 \\n -> 换行
-    .replace(/\\n/g, '\n');   // 再处理单重转义 \n -> 换行
+    .replace(/\\\\n/g, '\n') // 先处理双重转义 \\n -> 换行
+    .replace(/\\n/g, '\n'); // 再处理单重转义 \n -> 换行
 }
 
 if (process.env.SYSTEM_INSTRUCTION) {
@@ -210,7 +211,8 @@ export function getProxyConfig() {
   }
 
   // 检查系统代理环境变量（按优先级）
-  const systemProxy = process.env.HTTPS_PROXY ||
+  const systemProxy =
+    process.env.HTTPS_PROXY ||
     process.env.https_proxy ||
     process.env.HTTP_PROXY ||
     process.env.http_proxy ||
@@ -230,14 +232,14 @@ const DEFAULT_API_CONFIGS = {
     url: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse',
     modelsUrl: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels',
     noStreamUrl: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent',
-    host: 'daily-cloudcode-pa.sandbox.googleapis.com'
+    host: 'daily-cloudcode-pa.sandbox.googleapis.com',
   },
   production: {
     url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
     modelsUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
     noStreamUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent',
-    host: 'daily-cloudcode-pa.googleapis.com'
-  }
+    host: 'daily-cloudcode-pa.googleapis.com',
+  },
 };
 
 // Gemini CLI API 配置（来自 gcli2api 项目）
@@ -246,7 +248,7 @@ const DEFAULT_GEMINICLI_API_CONFIG = {
   url: 'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
   noStreamUrl: 'https://cloudcode-pa.googleapis.com/v1internal:generateContent',
   host: 'cloudcode-pa.googleapis.com',
-  userAgent: 'GeminiCLI/0.1.5 (Windows; AMD64)'
+  userAgent: 'GeminiCLI/0.1.5 (Windows; AMD64)',
 };
 
 /**
@@ -265,7 +267,7 @@ function getActiveApiConfig(jsonConfig) {
     modelsUrl: customConfig?.modelsUrl || defaultConfig.modelsUrl,
     noStreamUrl: customConfig?.noStreamUrl || defaultConfig.noStreamUrl,
     host: customConfig?.host || defaultConfig.host,
-    userAgent: jsonConfig.api?.userAgent || 'antigravity/1.13.3 windows/amd64'
+    userAgent: jsonConfig.api?.userAgent || 'antigravity/1.13.3 windows/amd64',
   };
 }
 
@@ -276,12 +278,12 @@ function getActiveApiConfig(jsonConfig) {
  */
 function getGeminiCliApiConfig(jsonConfig) {
   const customConfig = jsonConfig.geminicli?.api;
-  
+
   return {
     url: customConfig?.url || DEFAULT_GEMINICLI_API_CONFIG.url,
     noStreamUrl: customConfig?.noStreamUrl || DEFAULT_GEMINICLI_API_CONFIG.noStreamUrl,
     host: customConfig?.host || DEFAULT_GEMINICLI_API_CONFIG.host,
-    userAgent: customConfig?.userAgent || DEFAULT_GEMINICLI_API_CONFIG.userAgent
+    userAgent: customConfig?.userAgent || DEFAULT_GEMINICLI_API_CONFIG.userAgent,
   };
 }
 
@@ -299,22 +301,23 @@ export function buildConfig(jsonConfig) {
       host: jsonConfig.server?.host || DEFAULT_SERVER_HOST,
       heartbeatInterval: jsonConfig.server?.heartbeatInterval || DEFAULT_HEARTBEAT_INTERVAL,
       // 内存定时清理频率：避免频繁扫描/GC 带来的性能损耗
-      memoryCleanupInterval: jsonConfig.server?.memoryCleanupInterval ?? MEMORY_CLEANUP_INTERVAL
+      memoryCleanupInterval: jsonConfig.server?.memoryCleanupInterval ?? MEMORY_CLEANUP_INTERVAL,
     },
     cache: {
-      modelListTTL: jsonConfig.cache?.modelListTTL || MODEL_LIST_CACHE_TTL
+      modelListTTL: jsonConfig.cache?.modelListTTL || MODEL_LIST_CACHE_TTL,
     },
     rotation: {
       strategy: jsonConfig.rotation?.strategy || 'round_robin',
-      requestCount: jsonConfig.rotation?.requestCount || 10
+      requestCount: jsonConfig.rotation?.requestCount || 10,
     },
     // 日志配置
     log: {
-      maxSizeMB: jsonConfig.log?.maxSizeMB || 10,    // 单个日志文件最大 MB
-      maxFiles: jsonConfig.log?.maxFiles || 5,       // 保留历史文件数
-      maxMemory: jsonConfig.log?.maxMemory || 500    // 内存中保留条数
+      maxSizeMB: jsonConfig.log?.maxSizeMB || 10, // 单个日志文件最大 MB
+      maxFiles: jsonConfig.log?.maxFiles || 5, // 保留历史文件数
+      maxMemory: jsonConfig.log?.maxMemory || 500, // 内存中保留条数
     },
     imageBaseUrl: process.env.IMAGE_BASE_URL || null,
+    imageReturnBase64: jsonConfig.other?.imageReturnBase64 === true,
     maxImages: jsonConfig.other?.maxImages || DEFAULT_MAX_IMAGES,
     api: apiConfig,
     defaults: {
@@ -322,11 +325,11 @@ export function buildConfig(jsonConfig) {
       top_p: jsonConfig.defaults?.topP ?? DEFAULT_GENERATION_PARAMS.top_p,
       top_k: jsonConfig.defaults?.topK ?? DEFAULT_GENERATION_PARAMS.top_k,
       max_tokens: jsonConfig.defaults?.maxTokens ?? DEFAULT_GENERATION_PARAMS.max_tokens,
-      thinking_budget: jsonConfig.defaults?.thinkingBudget ?? DEFAULT_GENERATION_PARAMS.thinking_budget
+      thinking_budget: jsonConfig.defaults?.thinkingBudget ?? DEFAULT_GENERATION_PARAMS.thinking_budget,
     },
     security: {
       maxRequestSize: jsonConfig.server?.maxRequestSize || DEFAULT_MAX_REQUEST_SIZE,
-      apiKey: getApiKey()
+      apiKey: getApiKey(),
     },
     admin: getAdminCredentials(),
     useNativeAxios: jsonConfig.other?.useNativeAxios !== false,
@@ -347,7 +350,8 @@ export function buildConfig(jsonConfig) {
     passSignatureToClient: jsonConfig.other?.passSignatureToClient === true,
     useFallbackSignature: jsonConfig.other?.useFallbackSignature === true,
     // 签名缓存配置（新版）
-    cacheAllSignatures: jsonConfig.other?.cacheAllSignatures === true ||
+    cacheAllSignatures:
+      jsonConfig.other?.cacheAllSignatures === true ||
       process.env.CACHE_ALL_SIGNATURES === '1' ||
       process.env.CACHE_ALL_SIGNATURES === 'true',
     cacheToolSignatures: jsonConfig.other?.cacheToolSignatures !== false,
@@ -357,7 +361,7 @@ export function buildConfig(jsonConfig) {
     fakeNonStream: jsonConfig.other?.fakeNonStream !== false,
     // 调试：完整打印最终请求体与原始响应（可能包含敏感内容/大体积数据，只从环境变量读取）
     debugDumpRequestResponse: process.env.DEBUG_DUMP_REQUEST_RESPONSE === '1',
-    
+
     // ==================== Gemini CLI 配置 ====================
     geminicli: {
       // 是否启用 Gemini CLI 反代功能
@@ -367,17 +371,26 @@ export function buildConfig(jsonConfig) {
       // Token 轮换策略
       rotation: {
         strategy: jsonConfig.geminicli?.rotation?.strategy || 'round_robin',
-        requestCount: jsonConfig.geminicli?.rotation?.requestCount || 10
+        requestCount: jsonConfig.geminicli?.rotation?.requestCount || 10,
       },
       // 默认生成参数（可覆盖全局默认值）
       defaults: {
-        temperature: jsonConfig.geminicli?.defaults?.temperature ?? jsonConfig.defaults?.temperature ?? DEFAULT_GENERATION_PARAMS.temperature,
+        temperature:
+          jsonConfig.geminicli?.defaults?.temperature ??
+          jsonConfig.defaults?.temperature ??
+          DEFAULT_GENERATION_PARAMS.temperature,
         top_p: jsonConfig.geminicli?.defaults?.topP ?? jsonConfig.defaults?.topP ?? DEFAULT_GENERATION_PARAMS.top_p,
         top_k: jsonConfig.geminicli?.defaults?.topK ?? jsonConfig.defaults?.topK ?? DEFAULT_GENERATION_PARAMS.top_k,
-        max_tokens: jsonConfig.geminicli?.defaults?.maxTokens ?? jsonConfig.defaults?.maxTokens ?? DEFAULT_GENERATION_PARAMS.max_tokens,
-        thinking_budget: jsonConfig.geminicli?.defaults?.thinkingBudget ?? jsonConfig.defaults?.thinkingBudget ?? DEFAULT_GENERATION_PARAMS.thinking_budget
-      }
-    }
+        max_tokens:
+          jsonConfig.geminicli?.defaults?.maxTokens ??
+          jsonConfig.defaults?.maxTokens ??
+          DEFAULT_GENERATION_PARAMS.max_tokens,
+        thinking_budget:
+          jsonConfig.geminicli?.defaults?.thinkingBudget ??
+          jsonConfig.defaults?.thinkingBudget ??
+          DEFAULT_GENERATION_PARAMS.thinking_budget,
+      },
+    },
   };
 }
 

@@ -1,24 +1,21 @@
 import geminicliTokenManager from '../auth/geminicli_token_manager.js';
 import config from '../config/config.js';
-import logger from '../utils/logger.js';
 import { createApiError } from '../utils/errors.js';
-import {
-  convertToToolCall
-} from './stream_parser.js';
 import { saveBase64Image } from '../utils/imageStorage.js';
 import {
-  isDebugDumpEnabled,
+  collectStreamChunk,
   createDumpId,
   createStreamCollector,
-  collectStreamChunk,
+  dumpFinalRawResponse,
   dumpFinalRequest,
   dumpStreamResponse,
-  dumpFinalRawResponse
+  isDebugDumpEnabled,
 } from './debugDump.js';
-import { getUpstreamStatus, readUpstreamErrorBody, isCallerDoesNotHavePermission } from './upstreamError.js';
-import { createStreamLineProcessor } from './streamLineProcessor.js';
-import { runAxiosSseStream, postJsonAndParse } from './geminiTransport.js';
 import { parseGeminiCandidateParts, toOpenAIUsage } from './geminiResponseParser.js';
+import { postJsonAndParse, runAxiosSseStream } from './geminiTransport.js';
+import { convertToToolCall } from './stream_parser.js';
+import { createStreamLineProcessor } from './streamLineProcessor.js';
+import { getUpstreamStatus, isCallerDoesNotHavePermission, readUpstreamErrorBody } from './upstreamError.js';
 
 // ==================== 调试：复用 client.js 的调试日志实现 ====================
 
@@ -42,11 +39,11 @@ import { parseGeminiCandidateParts, toOpenAIUsage } from './geminiResponseParser
 function buildHeaders(token) {
   const geminicliConfig = config.geminicli?.api || {};
   return {
-    'Host': geminicliConfig.host || 'cloudcode-pa.googleapis.com',
+    Host: geminicliConfig.host || 'cloudcode-pa.googleapis.com',
     'User-Agent': geminicliConfig.userAgent || 'GeminiCLI/0.1.5 (Windows; AMD64)',
-    'Authorization': `Bearer ${token.access_token}`,
+    Authorization: `Bearer ${token.access_token}`,
     'Content-Type': 'application/json',
-    'Accept-Encoding': 'gzip'
+    'Accept-Encoding': 'gzip',
   };
 }
 
@@ -59,8 +56,8 @@ function buildApiUrl(stream = true) {
   const geminicliConfig = config.geminicli?.api || {};
   // 使用 v1internal 端点，模型名称在请求体中指定
   return stream
-    ? (geminicliConfig.url || 'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse')
-    : (geminicliConfig.noStreamUrl || 'https://cloudcode-pa.googleapis.com/v1internal:generateContent');
+    ? geminicliConfig.url || 'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse'
+    : geminicliConfig.noStreamUrl || 'https://cloudcode-pa.googleapis.com/v1internal:generateContent';
 }
 
 /**
@@ -77,7 +74,7 @@ function buildRequestBody(requestBody, model, projectId) {
   return {
     model: model,
     project: projectId,
-    request: requestBody
+    request: requestBody,
   };
 }
 
@@ -89,7 +86,7 @@ function buildRequestBody(requestBody, model, projectId) {
 async function handleApiError(error, token) {
   const status = getUpstreamStatus(error);
   const errorBody = await readUpstreamErrorBody(error);
-  
+
   if (status === 403) {
     if (isCallerDoesNotHavePermission(errorBody)) {
       throw createApiError(`超出模型最大上下文。错误详情: ${errorBody}`, status, errorBody);
@@ -97,11 +94,11 @@ async function handleApiError(error, token) {
     geminicliTokenManager.disableCurrentToken(token);
     throw createApiError(`该账号没有使用权限，已自动禁用。错误详情: ${errorBody}`, status, errorBody);
   }
-  
+
   if (status === 429) {
     throw createApiError(`请求频率过高，请稍后重试。错误详情: ${errorBody}`, status, errorBody);
   }
-  
+
   throw createApiError(`API请求失败 (${status}): ${errorBody}`, status, errorBody);
 }
 
@@ -118,46 +115,48 @@ export async function generateStreamResponse(requestBody, token, model, callback
   if (!token.projectId) {
     throw createApiError('Token 缺少 projectId，请在管理页面获取 ProjectId', 400);
   }
-  
+
   const headers = buildHeaders(token);
   const url = buildApiUrl(true);
   const fullRequestBody = buildRequestBody(requestBody, model, token.projectId);
-  
+
   // 调试日志
   const dumpId = isDebugDumpEnabled() ? createDumpId('cli_stream') : null;
   const streamCollector = dumpId ? createStreamCollector() : null;
   if (dumpId) {
     await dumpFinalRequest(dumpId, fullRequestBody);
   }
-  
+
   // 状态对象用于流式解析
   const state = {
     toolCalls: [],
     reasoningSignature: null,
     sessionId: null, // Gemini CLI 不使用 sessionId
-    model: model
+    model: model,
   };
   const processor = createStreamLineProcessor({
     state,
     onEvent: callback,
-    onRawChunk: (chunk) => collectStreamChunk(streamCollector, chunk)
+    onRawChunk: chunk => collectStreamChunk(streamCollector, chunk),
   });
-  
+
   try {
     await runAxiosSseStream({
       url,
       headers,
       data: fullRequestBody,
       timeout: config.timeout,
-      processor
+      processor,
     });
-    
+
     // 流式响应结束后写入日志
     if (dumpId) {
       await dumpStreamResponse(dumpId, streamCollector);
     }
   } catch (error) {
-    try { processor.close(); } catch { }
+    try {
+      processor.close();
+    } catch {}
     await handleApiError(error, token);
   }
 }
@@ -173,17 +172,17 @@ export async function generateNoStreamResponse(requestBody, token, model) {
   if (!token.projectId) {
     throw createApiError('Token 缺少 projectId，请在管理页面获取 ProjectId', 400);
   }
-  
+
   const headers = buildHeaders(token);
   const url = buildApiUrl(false);
   const fullRequestBody = buildRequestBody(requestBody, model, token.projectId);
-  
+
   // 调试日志
   const dumpId = isDebugDumpEnabled() ? createDumpId('cli_no_stream') : null;
   if (dumpId) {
     await dumpFinalRequest(dumpId, fullRequestBody);
   }
-  
+
   let data;
   try {
     data = await postJsonAndParse({
@@ -193,39 +192,52 @@ export async function generateNoStreamResponse(requestBody, token, model) {
       body: fullRequestBody,
       timeout: config.timeout,
       dumpId,
-      dumpFinalRawResponse
+      dumpFinalRawResponse,
     });
   } catch (error) {
     await handleApiError(error, token);
   }
-  
+
   // 处理 GeminiCLI 的 response 包装格式
   // GeminiCLI API 返回格式: { "response": { "candidates": [...] } }
   if (data.response) {
     data = data.response;
   }
-  
+
   // 解析响应内容
-  const parts = (data.candidates?.[0]?.content?.parts) || [];
+  const parts = data.candidates?.[0]?.content?.parts || [];
   const parsed = parseGeminiCandidateParts({
     parts,
     sessionId: null,
     model,
     convertToToolCall,
-    saveBase64Image
+    saveBase64Image,
   });
 
   const usageData = toOpenAIUsage(data.usageMetadata);
 
   if (parsed.imageUrls.length > 0) {
-    let markdown = parsed.content ? parsed.content + '\n\n' : '';
+    const prefixText = parsed.content ? parsed.content + '\n\n' : '';
+
+    // 开关：直接返回 data:image/...;base64,...（不落盘、不生成 markdown 链接）
+    if (config.imageReturnBase64 === true) {
+      return {
+        content: prefixText + parsed.imageUrls.join('\n\n'),
+        reasoningContent: parsed.reasoningContent,
+        reasoningSignature: parsed.reasoningSignature,
+        toolCalls: parsed.toolCalls,
+        usage: usageData,
+      };
+    }
+
+    let markdown = prefixText;
     markdown += parsed.imageUrls.map(url => `![image](${url})`).join('\n\n');
     return {
       content: markdown,
       reasoningContent: parsed.reasoningContent,
       reasoningSignature: parsed.reasoningSignature,
       toolCalls: parsed.toolCalls,
-      usage: usageData
+      usage: usageData,
     };
   }
 
@@ -234,7 +246,7 @@ export async function generateNoStreamResponse(requestBody, token, model) {
     reasoningContent: parsed.reasoningContent,
     reasoningSignature: parsed.reasoningSignature,
     toolCalls: parsed.toolCalls,
-    usage: usageData
+    usage: usageData,
   };
 }
 
