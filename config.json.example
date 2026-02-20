@@ -29,7 +29,7 @@
       "noStreamUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent",
       "host": "daily-cloudcode-pa.googleapis.com"
     },
-    "userAgent": "antigravity/1.15.8 windows/amd64"
+    "userAgent": "antigravity/1.18.3 windows/amd64"
   },
   "defaults": {
     "temperature": 1,

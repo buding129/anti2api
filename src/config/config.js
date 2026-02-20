@@ -267,7 +267,7 @@ function getActiveApiConfig(jsonConfig) {
     modelsUrl: customConfig?.modelsUrl || defaultConfig.modelsUrl,
     noStreamUrl: customConfig?.noStreamUrl || defaultConfig.noStreamUrl,
     host: customConfig?.host || defaultConfig.host,
-    userAgent: jsonConfig.api?.userAgent || 'antigravity/1.13.3 windows/amd64',
+    userAgent: jsonConfig.api?.userAgent || 'antigravity/1.15.8 windows/amd64',
   };
 }
 
