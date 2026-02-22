@@ -132,9 +132,17 @@ export const handleGeminiRequest = async (req, res, modelName, isStream) => {
       quotaManager.updateQuota(tokenId, quotas);
     };
 
+    const formatTokenTag = (t, id) => {
+      if (id) return id;
+      const suffix = t?.access_token ? t.access_token.slice(-8) : '';
+      return suffix ? `...${suffix}` : 'unknown';
+    };
+
     // 429 重试前：切换到下一个 token，并重新构建请求体
-    const rotateTokenForRetry = async ({ status } = {}) => {
+    const rotateTokenForRetry = async ({ status, attempt, loggerPrefix } = {}) => {
       if (status !== 429) return;
+
+      const beforeTag = formatTokenTag(token, tokenId);
 
       const nextToken = await tokenManager.getToken(modelName);
       if (nextToken) {
@@ -145,6 +153,9 @@ export const handleGeminiRequest = async (req, res, modelName, isStream) => {
           prepareImageRequest(requestBody);
         }
       }
+
+      const afterTag = formatTokenTag(token, tokenId);
+      logger.info(`${loggerPrefix}第 ${attempt} 次重试前切换token: ${beforeTag} -> ${afterTag}`);
     };
 
     // 创建 with429Retry 选项
@@ -154,7 +165,7 @@ export const handleGeminiRequest = async (req, res, modelName, isStream) => {
       tokenId: () => tokenId,
       modelId: modelName,
       refreshQuota,
-      onRetry: rotateTokenForRetry,
+      onRetry: ctx => rotateTokenForRetry({ ...ctx, loggerPrefix: prefix }),
     });
 
     if (isStream) {

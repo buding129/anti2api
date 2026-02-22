@@ -59,17 +59,27 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
     const { id, created } = createResponseMeta();
     const safeRetries = getSafeRetries(config.retryTimes);
 
+    const formatTokenTag = t => {
+      const suffix = t?.access_token ? t.access_token.slice(-8) : '';
+      return suffix ? `...${suffix}` : 'unknown';
+    };
+
     // 429 重试时：切换到下一个 Gemini CLI token
-    const rotateTokenForRetry = async ({ status } = {}) => {
+    const rotateTokenForRetry = async ({ status, attempt, loggerPrefix } = {}) => {
       if (status !== 429) return;
+
+      const beforeTag = formatTokenTag(token);
       const nextToken = await getToken();
       if (nextToken) token = nextToken;
+      const afterTag = formatTokenTag(token);
+
+      logger.info(`${loggerPrefix}第 ${attempt} 次重试前切换token: ${beforeTag} -> ${afterTag}`);
     };
 
     const createRetryOptions = prefix => ({
       loggerPrefix: prefix,
       onAttempt: () => recordRequest(token),
-      onRetry: rotateTokenForRetry,
+      onRetry: ctx => rotateTokenForRetry({ ...ctx, loggerPrefix: prefix }),
     });
 
     // 假流式模式：使用非流式 API 获取数据，然后模拟流式输出
