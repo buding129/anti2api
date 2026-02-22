@@ -4,35 +4,31 @@
  */
 
 import {
-  generateStreamResponse,
   generateNoStreamResponse,
+  generateStreamResponse,
   getToken,
-  recordRequest
+  recordRequest,
 } from '../../api/geminicli_client.js';
-import {
-  convertToGeminiCli,
-  isFakeStreamingModel
-} from '../../utils/converters/geminicli.js';
+import config from '../../config/config.js';
+import { convertToGeminiCli } from '../../utils/converters/geminicli.js';
 import { buildOpenAIErrorPayload } from '../../utils/errors.js';
 import logger from '../../utils/logger.js';
-import config from '../../config/config.js';
-import geminicliTokenManager from '../../auth/geminicli_token_manager.js';
-import { createGeminiCliStreamWriter, writeGeminiCliFakeStreamResponse } from './geminicli/writers.js';
-import { normalizeGeminiCliRequest } from './geminicli/normalizeRequest.js';
-import { createGeminiResponse } from '../formatters/gemini.js';
+import { getSignature, isImageModel, setSignature, shouldCacheSignature } from '../../utils/thoughtSignatureCache.js';
 import { createClaudeResponse } from '../formatters/claude.js';
+import { createGeminiResponse } from '../formatters/gemini.js';
 import { createOpenAIChatCompletionResponse } from '../formatters/openai.js';
 import {
-  createResponseMeta,
-  setStreamHeaders,
   createHeartbeat,
-  writeStreamData,
+  createResponseMeta,
   endStream,
-  with429Retry
+  setStreamHeaders,
+  with429Retry,
+  writeStreamData,
 } from '../stream.js';
-import { setSignature, getSignature, shouldCacheSignature, isImageModel } from '../../utils/thoughtSignatureCache.js';
 import { getSafeRetries } from './common/retry.js';
 import { disableTimeouts } from './common/timeouts.js';
+import { normalizeGeminiCliRequest } from './geminicli/normalizeRequest.js';
+import { createGeminiCliStreamWriter, writeGeminiCliFakeStreamResponse } from './geminicli/writers.js';
 
 /**
  * 处理 Gemini CLI 格式的聊天请求（支持 OpenAI/Gemini/Claude 格式）
@@ -51,18 +47,30 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
   const { format, stream, cleanedBody } = normalized;
 
   try {
-    const token = await getToken();
+    let token = await getToken();
     if (!token) {
       throw new Error('没有可用的 Gemini CLI token，请在管理页面添加账号');
     }
     const { geminiRequest, model: actualModel, features, sourceFormat } = convertToGeminiCli(cleanedBody);
-
 
     // 保存原始请求的模型名称用于响应
     const responseModel = requestBody.model || actualModel;
 
     const { id, created } = createResponseMeta();
     const safeRetries = getSafeRetries(config.retryTimes);
+
+    // 429 重试时：切换到下一个 Gemini CLI token
+    const rotateTokenForRetry = async ({ status } = {}) => {
+      if (status !== 429) return;
+      const nextToken = await getToken();
+      if (nextToken) token = nextToken;
+    };
+
+    const createRetryOptions = prefix => ({
+      loggerPrefix: prefix,
+      onAttempt: () => recordRequest(token),
+      onRetry: rotateTokenForRetry,
+    });
 
     // 假流式模式：使用非流式 API 获取数据，然后模拟流式输出
     const useFakeStreaming = features.fakeStreaming && stream;
@@ -79,14 +87,13 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
           res,
           id,
           created,
-          responseModel
+          responseModel,
         });
 
         await with429Retry(
-          () => generateStreamResponse(geminiRequest, token, actualModel, (data) => writer.onEvent(data)),
+          () => generateStreamResponse(geminiRequest, token, actualModel, data => writer.onEvent(data)),
           safeRetries,
-          '[GeminiCLI] chat.stream ',
-          () => recordRequest(token)
+          createRetryOptions('[GeminiCLI] chat.stream '),
         );
 
         writer.finalize();
@@ -112,8 +119,7 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
         const { content, reasoningContent, reasoningSignature, toolCalls, usage } = await with429Retry(
           () => generateNoStreamResponse(geminiRequest, token, actualModel),
           safeRetries,
-          '[GeminiCLI] chat.fake_stream ',
-          () => recordRequest(token)
+          createRetryOptions('[GeminiCLI] chat.fake_stream '),
         );
 
         // 缓存签名（假流式响应）
@@ -121,7 +127,10 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
           const hasTools = toolCalls && toolCalls.length > 0;
           const isImage = isImageModel(actualModel);
           if (shouldCacheSignature({ hasTools, isImageModel: isImage })) {
-            setSignature(null, actualModel, reasoningSignature, reasoningContent || ' ', { hasTools, isImageModel: isImage });
+            setSignature(null, actualModel, reasoningSignature, reasoningContent || ' ', {
+              hasTools,
+              isImageModel: isImage,
+            });
           }
         }
 
@@ -135,7 +144,7 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
           reasoningContent,
           reasoningSignature,
           toolCalls,
-          usage
+          usage,
         });
 
         clearInterval(heartbeatTimer);
@@ -157,8 +166,7 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
       const { content, reasoningContent, reasoningSignature, toolCalls, usage } = await with429Retry(
         () => generateNoStreamResponse(geminiRequest, token, actualModel),
         safeRetries,
-        '[GeminiCLI] chat.no_stream ',
-        () => recordRequest(token)
+        createRetryOptions('[GeminiCLI] chat.no_stream '),
       );
 
       // 处理签名：优先使用 API 返回的签名，否则使用缓存的签名
@@ -182,50 +190,59 @@ export const handleGeminiCliRequest = async (req, res, forceFormat = null) => {
       // 缓存签名（非流式响应）
       if (finalReasoningSignature && actualModel) {
         if (shouldCacheSignature({ hasTools, isImageModel: isImage })) {
-          setSignature(null, actualModel, finalReasoningSignature, finalReasoningContent || ' ', { hasTools, isImageModel: isImage });
+          setSignature(null, actualModel, finalReasoningSignature, finalReasoningContent || ' ', {
+            hasTools,
+            isImageModel: isImage,
+          });
         }
       }
 
       // 根据请求格式返回相应格式的响应
       if (format === 'gemini') {
-        res.json(createGeminiResponse(
-          content,
-          finalReasoningContent || null,
-          finalReasoningSignature || null,
-          toolCalls,
-          'STOP',
-          usage,
-          {
-            passSignatureToClient: true,
-            fallbackThoughtSignature: finalReasoningSignature || null
-          }
-        ));
+        res.json(
+          createGeminiResponse(
+            content,
+            finalReasoningContent || null,
+            finalReasoningSignature || null,
+            toolCalls,
+            'STOP',
+            usage,
+            {
+              passSignatureToClient: true,
+              fallbackThoughtSignature: finalReasoningSignature || null,
+            },
+          ),
+        );
       } else if (format === 'claude') {
         const claudeId = `msg_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
-        res.json(createClaudeResponse(
-          claudeId,
-          responseModel,
-          content,
-          finalReasoningContent || null,
-          finalReasoningSignature || null,
-          toolCalls,
-          (toolCalls && toolCalls.length > 0) ? 'tool_use' : 'end_turn',
-          usage,
-          { passSignatureToClient: true }
-        ));
+        res.json(
+          createClaudeResponse(
+            claudeId,
+            responseModel,
+            content,
+            finalReasoningContent || null,
+            finalReasoningSignature || null,
+            toolCalls,
+            toolCalls && toolCalls.length > 0 ? 'tool_use' : 'end_turn',
+            usage,
+            { passSignatureToClient: true },
+          ),
+        );
       } else {
-        res.json(createOpenAIChatCompletionResponse({
-          id,
-          created,
-          model: responseModel,
-          content,
-          reasoningContent: finalReasoningContent || null,
-          reasoningSignature: null,
-          toolCalls,
-          usage,
-          passSignatureToClient: false,
-          stripToolCallSignature: true
-        }));
+        res.json(
+          createOpenAIChatCompletionResponse({
+            id,
+            created,
+            model: responseModel,
+            content,
+            reasoningContent: finalReasoningContent || null,
+            reasoningSignature: null,
+            toolCalls,
+            usage,
+            passSignatureToClient: false,
+            stripToolCallSignature: true,
+          }),
+        );
       }
     }
   } catch (error) {

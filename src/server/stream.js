@@ -3,12 +3,12 @@
  * 提供统一的流式响应处理、心跳保活、429/503重试等功能
  */
 
+import quotaManager from '../auth/quota_manager.js';
+import tokenCooldownManager from '../auth/token_cooldown_manager.js';
 import config from '../config/config.js';
+import { DEFAULT_HEARTBEAT_INTERVAL, LONG_COOLDOWN_THRESHOLD } from '../constants/index.js';
 import logger from '../utils/logger.js';
 import memoryManager, { registerMemoryPoolCleanup } from '../utils/memoryManager.js';
-import { DEFAULT_HEARTBEAT_INTERVAL, LONG_COOLDOWN_THRESHOLD } from '../constants/index.js';
-import tokenCooldownManager from '../auth/token_cooldown_manager.js';
-import quotaManager from '../auth/quota_manager.js';
 import { getGroupKey } from '../utils/modelGroups.js';
 
 // ==================== 心跳机制（防止 CF 超时） ====================
@@ -20,7 +20,7 @@ const SSE_HEARTBEAT = Buffer.from(': heartbeat\n\n');
  * @param {Response} res - Express响应对象
  * @returns {NodeJS.Timeout} 定时器
  */
-export const createHeartbeat = (res) => {
+export const createHeartbeat = res => {
   const timer = setInterval(() => {
     if (!res.writableEnded) {
       res.write(SSE_HEARTBEAT);
@@ -47,14 +47,14 @@ const SSE_DONE = Buffer.from('data: [DONE]\n\n');
  */
 export const createResponseMeta = () => ({
   id: `chatcmpl-${Date.now()}`,
-  created: Math.floor(Date.now() / 1000)
+  created: Math.floor(Date.now() / 1000),
 });
 
 /**
  * 设置流式响应头
  * @param {Response} res - Express响应对象
  */
-export const setStreamHeaders = (res) => {
+export const setStreamHeaders = res => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -74,9 +74,9 @@ export const getChunkObject = () => chunkPool.pop() || { choices: [{ index: 0, d
 
 /**
  * 释放 chunk 对象回对象池
- * @param {Object} obj 
+ * @param {Object} obj
  */
-export const releaseChunkObject = (obj) => {
+export const releaseChunkObject = obj => {
   const maxSize = memoryManager.getPoolSizes().chunk;
   if (chunkPool.length < maxSize) chunkPool.push(obj);
 };
@@ -165,7 +165,7 @@ function tryParseJson(value) {
       const sliced = value.slice(first, last + 1);
       try {
         return JSON.parse(sliced);
-      } catch { }
+      } catch {}
     }
     return null;
   }
@@ -187,7 +187,7 @@ function extractUpstreamErrorBody(error) {
 function getUpstreamRetryDelayMs(error) {
   // Prefer explicit hints from upstream payload (RetryInfo/quotaResetDelay/quotaResetTimeStamp)
   const body = extractUpstreamErrorBody(error);
-  const root = (body && typeof body === 'object') ? body : null;
+  const root = body && typeof body === 'object' ? body : null;
   const inner = root?.error || root;
   const details = Array.isArray(inner?.details) ? inner.details : [];
 
@@ -225,7 +225,7 @@ function getUpstreamRetryDelayMs(error) {
 
 function computeBackoffMs(attempt, explicitDelayMs) {
   // attempt starts from 0 for first call; on first retry attempt=1
-  const maxMs = 20_000;
+  const maxMs = 2_000; // 最多等待 2s，避免单次生成时间过长
   const hasExplicit = Number.isFinite(explicitDelayMs) && explicitDelayMs !== null;
   const baseMs = hasExplicit ? Math.max(0, Math.floor(explicitDelayMs)) : 500;
   const exp = Math.min(maxMs, Math.floor(baseMs * Math.pow(2, Math.max(0, attempt - 1))));
@@ -251,7 +251,7 @@ function computeBackoffMs(attempt, explicitDelayMs) {
  */
 function getUpstreamResetTimestamp(error) {
   const body = extractUpstreamErrorBody(error);
-  const root = (body && typeof body === 'object') ? body : null;
+  const root = body && typeof body === 'object' ? body : null;
   const inner = root?.error || root;
   const details = Array.isArray(inner?.details) ? inner.details : [];
 
@@ -282,10 +282,10 @@ function isRetryableError(status, error) {
   // 503 需要检查是否为容量不足错误
   if (status === 503) {
     const body = extractUpstreamErrorBody(error);
-    const root = (body && typeof body === 'object') ? body : null;
+    const root = body && typeof body === 'object' ? body : null;
     const inner = root?.error || root;
     const details = Array.isArray(inner?.details) ? inner.details : [];
-    
+
     // 检查是否包含 MODEL_CAPACITY_EXHAUSTED
     for (const d of details) {
       if (d?.reason === 'MODEL_CAPACITY_EXHAUSTED') {
@@ -313,8 +313,9 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
   // 兼容旧版调用方式：with429Retry(fn, maxRetries, loggerPrefix, onAttempt)
   let loggerPrefix = '';
   let onAttempt = null;
-  let tokenId = null;
-  let modelId = null;
+  let onRetry = null;
+  let tokenId = null; // string | (() => string)
+  let modelId = null; // string | (() => string)
   let refreshQuota = null;
 
   if (typeof options === 'string') {
@@ -324,10 +325,13 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
   } else if (typeof options === 'object' && options !== null) {
     loggerPrefix = options.loggerPrefix || '';
     onAttempt = options.onAttempt || null;
+    onRetry = options.onRetry || null;
     tokenId = options.tokenId || null;
     modelId = options.modelId || null;
     refreshQuota = options.refreshQuota || null;
   }
+
+  const resolveMaybeFn = value => (typeof value === 'function' ? value() : value);
 
   const retries = Number.isFinite(maxRetries) && maxRetries > 0 ? Math.floor(maxRetries) : 0;
   const cooldownThreshold = config.quota?.longCooldownThreshold || LONG_COOLDOWN_THRESHOLD;
@@ -351,19 +355,31 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
         const errorType = status === 503 ? '503 (容量不足)' : '429';
 
         // 检查是否是长时间冷却（额度耗尽）- 仅 429 触发模型系列禁用
-        if (status === 429 && explicitDelayMs !== null && explicitDelayMs >= cooldownThreshold && tokenId && modelId) {
+        const resolvedTokenId = resolveMaybeFn(tokenId);
+        const resolvedModelId = resolveMaybeFn(modelId);
+
+        if (
+          status === 429 &&
+          explicitDelayMs !== null &&
+          explicitDelayMs >= cooldownThreshold &&
+          resolvedTokenId &&
+          resolvedModelId
+        ) {
           // 恢复时间超过阈值，触发模型系列禁用
           let finalResetTimestamp = upstreamResetTimestamp;
 
           // 尝试从 quotas.json 获取更准确的恢复时间
-          const { resetTime: quotaResetTime, hasData } = quotaManager.getModelGroupResetTime(tokenId, modelId);
+          const { resetTime: quotaResetTime, hasData } = quotaManager.getModelGroupResetTime(
+            resolvedTokenId,
+            resolvedModelId,
+          );
 
           if (!hasData && typeof refreshQuota === 'function') {
             // 没有额度数据，尝试刷新
             logger.info(`${loggerPrefix}正在获取最新额度数据以确定准确恢复时间...`);
             try {
               await refreshQuota();
-              const refreshed = quotaManager.getModelGroupResetTime(tokenId, modelId);
+              const refreshed = quotaManager.getModelGroupResetTime(resolvedTokenId, resolvedModelId);
               if (refreshed.resetTime) {
                 finalResetTimestamp = refreshed.resetTime;
               }
@@ -376,28 +392,40 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
           }
 
           if (finalResetTimestamp && finalResetTimestamp > Date.now()) {
-            const groupKey = getGroupKey(modelId);
+            const groupKey = getGroupKey(resolvedModelId);
             const resetDate = new Date(finalResetTimestamp);
-          logger.warn(
-            `${loggerPrefix}收到 ${errorType}，恢复时间 ${Math.round(explicitDelayMs / 1000 / 60)} 分钟后，` +
-              `超过阈值(${Math.round(cooldownThreshold / 1000 / 60)}分钟)，` +
-              `禁用 ${groupKey} 系列直到 ${resetDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
+            logger.warn(
+              `${loggerPrefix}收到 ${errorType}，恢复时间 ${Math.round(explicitDelayMs / 1000 / 60)} 分钟后，` +
+                `超过阈值(${Math.round(cooldownThreshold / 1000 / 60)}分钟)，` +
+                `禁用 ${groupKey} 系列直到 ${resetDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
             );
-            tokenCooldownManager.setCooldown(tokenId, modelId, finalResetTimestamp);
+            tokenCooldownManager.setCooldown(resolvedTokenId, resolvedModelId, finalResetTimestamp);
             // 不重试，直接抛出错误
             throw error;
           }
         }
 
-        // 短时间等待，正常重试
+        // 短时间等待，正常重试（重试前可切换 token）
         if (attempt < retries) {
           const nextAttempt = attempt + 1;
           const waitMs = computeBackoffMs(nextAttempt, explicitDelayMs);
           logger.warn(
             `${loggerPrefix}收到 ${errorType}，等待 ${waitMs}ms 后进行第 ${nextAttempt} 次重试（共 ${retries} 次）` +
-            (explicitDelayMs !== null ? `（上游提示≈${explicitDelayMs}ms）` : '')
+              (explicitDelayMs !== null ? `（上游提示≈${explicitDelayMs}ms）` : ''),
           );
-          await sleep(waitMs);
+
+          const tasks = [sleep(waitMs)];
+          if (typeof onRetry === 'function') {
+            tasks.push(
+              Promise.resolve()
+                .then(() => onRetry({ attempt: nextAttempt, status, error, explicitDelayMs }))
+                .catch(e => {
+                  logger.warn(`${loggerPrefix}重试前切换 token 失败: ${e.message}`);
+                }),
+            );
+          }
+
+          await Promise.all(tasks);
           attempt = nextAttempt;
           continue;
         }
@@ -405,4 +433,4 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
       throw error;
     }
   }
-};
+}
