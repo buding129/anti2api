@@ -86,44 +86,128 @@ const TYPE_UPPERCASE_MAP = {
   array: 'ARRAY',
 };
 
-export function cleanParameters(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
+function normalizeSchemaRef(value) {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  if (!v) return null;
 
-  // Gemini/Vertex Schema.ref 限制：当 schema 节点设置了 ref 时，只允许与 description/default 共存
-  // 开关：config.fixGeminiSchemaRef（默认开启，可在 WebUI 关闭以恢复旧行为）
-  if (config.fixGeminiSchemaRef === true && !Array.isArray(obj) && typeof obj.ref === 'string' && obj.ref.trim()) {
-    const refOnly = { ref: obj.ref };
-    if (obj.description !== undefined) refOnly.description = obj.description;
-    if (obj.default !== undefined) refOnly.default = obj.default;
-    return refOnly;
+  // 已经是 defs 的 key，例如 "QuestionOption"
+  if (!v.startsWith('#')) return v;
+
+  // 兼容 JSON Pointer：#/ $defs / Name 或 #/definitions/Name
+  for (const prefix of ['#/$defs/', '#/definitions/', '#/defs/']) {
+    if (v.startsWith(prefix)) {
+      const rest = v.slice(prefix.length);
+      const key = rest.split('/')[0];
+      return key ? key.trim() : null;
+    }
   }
 
-  const cleaned = Array.isArray(obj) ? [] : {};
+  // 兜底：如果是 #/a/b/c 形式，取最后一个段
+  if (v.startsWith('#/')) {
+    const parts = v.slice(2).split('/').filter(Boolean);
+    const last = parts[parts.length - 1];
+    return last ? last.trim() : null;
+  }
+
+  return null;
+}
+
+function cleanSchemaMap(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return map;
+  const out = {};
+  for (const [k, v] of Object.entries(map)) {
+    out[k] = v && typeof v === 'object' ? cleanParameters(v) : v;
+  }
+  return out;
+}
+
+export function cleanParameters(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+
+  // 数组：逐项递归
+  if (Array.isArray(obj)) {
+    return obj.map(item => (item && typeof item === 'object' ? cleanParameters(item) : item));
+  }
+
+  const fixRef = config.fixGeminiSchemaRef === true;
+
+  // Gemini/Vertex Schema.ref 限制：当 schema 节点设置了 ref/$ref 时，只允许与 description/default 共存
+  // 同时：将 $ref(#/$defs/X) 规范化为 ref: "X"
+  if (fixRef) {
+    const rawRef = typeof obj.ref === 'string' ? obj.ref : null;
+    const rawDollarRef = typeof obj['$ref'] === 'string' ? obj['$ref'] : null;
+    const normalized = normalizeSchemaRef(rawRef || rawDollarRef);
+
+    if (normalized) {
+      const refOnly = { ref: normalized };
+      if (obj.description !== undefined) refOnly.description = obj.description;
+      if (obj.default !== undefined) refOnly.default = obj.default;
+
+      // 若引用节点本身携带 defs（少见但可能出现在根 schema），保留并清洗
+      const defsSource = obj.defs || obj['$defs'] || obj.definitions;
+      if (defsSource && typeof defsSource === 'object' && !Array.isArray(defsSource)) {
+        refOnly.defs = cleanSchemaMap(defsSource);
+      }
+      return refOnly;
+    }
+  }
+
+  const cleaned = {};
+
   for (const [key, value] of Object.entries(obj)) {
+    // $defs/definitions -> defs（Gemini Schema 字段）
+    if (fixRef && (key === '$defs' || key === 'definitions')) {
+      const defsMap = cleanSchemaMap(value);
+      if (defsMap && typeof defsMap === 'object' && !Array.isArray(defsMap)) {
+        cleaned.defs = { ...(cleaned.defs || {}), ...defsMap };
+      } else {
+        cleaned.defs = defsMap;
+      }
+      continue;
+    }
+
+    // defs 本身也是 map<string, Schema>
+    if (key === 'defs' && value && typeof value === 'object' && !Array.isArray(value)) {
+      cleaned.defs = cleanSchemaMap(value);
+      continue;
+    }
+
+    // properties 是 map<string, Schema>：避免把属性名当成 schema 字段处理
+    if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+      cleaned.properties = cleanSchemaMap(value);
+      continue;
+    }
+
+    // $ref 兜底：如果没命中上面的 ref-only 分支，至少转成 ref
+    if (fixRef && key === '$ref') {
+      const normalized = normalizeSchemaRef(value);
+      if (normalized) cleaned.ref = normalized;
+      continue;
+    }
+
     if (EXCLUDED_KEYS.has(key)) continue;
+
     if (key === 'type') {
       // 处理 type 字段
       if (typeof value === 'string') {
-        // 字符串类型：转换为大写
         cleaned[key] = TYPE_UPPERCASE_MAP[value.toLowerCase()] || value.toUpperCase();
       } else if (Array.isArray(value)) {
-        // 数组类型（如 ["string", "null"]）：取第一个非 null 的类型
-        // Gemini API 不支持联合类型，需要转换为单一类型
         const nonNullType = value.find(t => t !== 'null' && t !== null);
         if (nonNullType && typeof nonNullType === 'string') {
           cleaned[key] = TYPE_UPPERCASE_MAP[nonNullType.toLowerCase()] || nonNullType.toUpperCase();
         } else {
-          // 如果都是 null 或找不到有效类型，默认为 STRING
           cleaned[key] = 'STRING';
         }
       } else {
-        // 其他情况，保持原值
         cleaned[key] = value;
       }
     } else {
       cleaned[key] = value && typeof value === 'object' ? cleanParameters(value) : value;
     }
   }
+
   return cleaned;
 }
 
