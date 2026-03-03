@@ -818,6 +818,24 @@
                           </label>
                         </div>
                       </div>
+
+                      <div class="form-row-inline switch-row">
+                        <div class="form-group compact switch-group">
+                          <label
+                            >Schema.ref 修复
+                            <span
+                              class="help-tip"
+                              data-tooltip="开启后：当工具/结构化输出的 Schema 节点包含 ref 时，仅保留 ref/description/default，避免 Gemini 400（Schema.ref alongside unsupported fields）。关闭可恢复旧行为"
+                              >?</span
+                            ></label
+                          >
+                          <label class="switch">
+                            <input type="checkbox" name="FIX_GEMINI_SCHEMA_REF" checked />
+                            <span class="slider"></span>
+                          </label>
+                        </div>
+                      </div>
+
                       <div class="form-row-inline">
                         <div class="form-group compact">
                           <label

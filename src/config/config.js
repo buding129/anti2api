@@ -357,6 +357,8 @@ export function buildConfig(jsonConfig) {
     cacheToolSignatures: jsonConfig.other?.cacheToolSignatures !== false,
     cacheImageSignatures: jsonConfig.other?.cacheImageSignatures !== false,
     cacheThinking: jsonConfig.other?.cacheThinking !== false,
+    // Schema.ref 兼容修复：ref 节点仅保留 ref/description/default，避免 Gemini 400
+    fixGeminiSchemaRef: jsonConfig.other?.fixGeminiSchemaRef !== false,
     // 假非流：非流式请求使用流式获取数据后返回非流式格式（默认启用）
     fakeNonStream: jsonConfig.other?.fakeNonStream !== false,
     // 调试：完整打印最终请求体与原始响应（可能包含敏感内容/大体积数据，只从环境变量读取）

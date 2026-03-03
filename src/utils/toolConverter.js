@@ -1,6 +1,7 @@
 // 工具转换公共模块
-import { sanitizeToolName, cleanParameters } from './utils.js';
+import config from '../config/config.js';
 import { setToolNameMapping } from './toolNameCache.js';
+import { cleanParameters, sanitizeToolName } from './utils.js';
 
 /**
  * 将单个工具定义转换为 Antigravity 格式的 functionDeclaration
@@ -14,22 +15,38 @@ import { setToolNameMapping } from './toolNameCache.js';
 function convertSingleTool(name, description, parameters, sessionId, actualModelName) {
   const originalName = name;
   const safeName = sanitizeToolName(originalName);
-  
+
   if (actualModelName && safeName !== originalName) {
     setToolNameMapping(actualModelName, safeName, originalName);
   }
-  
+
   const rawParams = parameters || {};
   const cleanedParams = cleanParameters(rawParams) || {};
+
+  const isRefSchema =
+    config.fixGeminiSchemaRef === true &&
+    cleanedParams &&
+    typeof cleanedParams === 'object' &&
+    !Array.isArray(cleanedParams) &&
+    typeof cleanedParams.ref === 'string' &&
+    cleanedParams.ref.trim();
+
   // 使用大写 OBJECT 以匹配官方 API 格式
-  if (cleanedParams.type === undefined) cleanedParams.type = 'OBJECT';
-  else if (cleanedParams.type === 'object') cleanedParams.type = 'OBJECT';
-  if ((cleanedParams.type === 'OBJECT' || cleanedParams.type === 'object') && cleanedParams.properties === undefined) cleanedParams.properties = {};
+  if (!isRefSchema) {
+    if (cleanedParams.type === undefined) cleanedParams.type = 'OBJECT';
+    else if (cleanedParams.type === 'object') cleanedParams.type = 'OBJECT';
+    if (
+      (cleanedParams.type === 'OBJECT' || cleanedParams.type === 'object') &&
+      cleanedParams.properties === undefined
+    ) {
+      cleanedParams.properties = {};
+    }
+  }
   //console.log(JSON.stringify(tool,null,2),100)
   return {
     name: safeName,
     description: description || '',
-    parameters: cleanedParams
+    parameters: cleanedParams,
   };
 }
 
@@ -43,21 +60,17 @@ function convertSingleTool(name, description, parameters, sessionId, actualModel
  */
 export function convertOpenAIToolsToAntigravity(openaiTools, sessionId, actualModelName) {
   if (!openaiTools || openaiTools.length === 0) return [];
-  
-  const declarations = openaiTools.map((tool) => {
+
+  const declarations = openaiTools.map(tool => {
     const func = tool.function || {};
-    return convertSingleTool(
-      func.name,
-      func.description,
-      func.parameters,
-      sessionId,
-      actualModelName
-    );
+    return convertSingleTool(func.name, func.description, func.parameters, sessionId, actualModelName);
   });
-  
-  return [{
-    functionDeclarations: declarations
-  }];
+
+  return [
+    {
+      functionDeclarations: declarations,
+    },
+  ];
 }
 
 /**
@@ -70,20 +83,16 @@ export function convertOpenAIToolsToAntigravity(openaiTools, sessionId, actualMo
  */
 export function convertClaudeToolsToAntigravity(claudeTools, sessionId, actualModelName) {
   if (!claudeTools || claudeTools.length === 0) return [];
-  
-  const declarations = claudeTools.map((tool) => {
-    return convertSingleTool(
-      tool.name,
-      tool.description,
-      tool.input_schema,
-      sessionId,
-      actualModelName
-    );
+
+  const declarations = claudeTools.map(tool => {
+    return convertSingleTool(tool.name, tool.description, tool.input_schema, sessionId, actualModelName);
   });
-  
-  return [{
-    functionDeclarations: declarations
-  }];
+
+  return [
+    {
+      functionDeclarations: declarations,
+    },
+  ];
 }
 
 /**
@@ -98,7 +107,7 @@ export function convertClaudeToolsToAntigravity(claudeTools, sessionId, actualMo
  */
 export function convertGeminiToolsToAntigravity(geminiTools, sessionId, actualModelName) {
   if (!geminiTools || geminiTools.length === 0) return [];
-  
+
   const allDeclarations = [];
   for (const tool of geminiTools) {
     // 格式1: 已经是 functionDeclarations 格式（支持驼峰和下划线命名）
@@ -106,9 +115,7 @@ export function convertGeminiToolsToAntigravity(geminiTools, sessionId, actualMo
     if (declarations) {
       // 收集所有声明
       for (const fd of declarations) {
-        allDeclarations.push(
-          convertSingleTool(fd.name, fd.description, fd.parameters, sessionId, actualModelName)
-        );
+        allDeclarations.push(convertSingleTool(fd.name, fd.description, fd.parameters, sessionId, actualModelName));
       }
     }
     // 格式2: 单个工具定义格式
@@ -119,14 +126,18 @@ export function convertGeminiToolsToAntigravity(geminiTools, sessionId, actualMo
           tool.description,
           tool.parameters || tool.input_schema,
           sessionId,
-          actualModelName
-        )
+          actualModelName,
+        ),
       );
     }
     // 格式3：不处理
   }
-  
-  return allDeclarations.length > 0 ? [{
-    functionDeclarations: allDeclarations
-  }] : [];
+
+  return allDeclarations.length > 0
+    ? [
+        {
+          functionDeclarations: allDeclarations,
+        },
+      ]
+    : [];
 }

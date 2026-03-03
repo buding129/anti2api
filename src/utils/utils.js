@@ -88,6 +88,16 @@ const TYPE_UPPERCASE_MAP = {
 
 export function cleanParameters(obj) {
   if (!obj || typeof obj !== 'object') return obj;
+
+  // Gemini/Vertex Schema.ref 限制：当 schema 节点设置了 ref 时，只允许与 description/default 共存
+  // 开关：config.fixGeminiSchemaRef（默认开启，可在 WebUI 关闭以恢复旧行为）
+  if (config.fixGeminiSchemaRef === true && !Array.isArray(obj) && typeof obj.ref === 'string' && obj.ref.trim()) {
+    const refOnly = { ref: obj.ref };
+    if (obj.description !== undefined) refOnly.description = obj.description;
+    if (obj.default !== undefined) refOnly.default = obj.default;
+    return refOnly;
+  }
+
   const cleaned = Array.isArray(obj) ? [] : {};
   for (const [key, value] of Object.entries(obj)) {
     if (EXCLUDED_KEYS.has(key)) continue;

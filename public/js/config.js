@@ -174,6 +174,8 @@ async function loadConfig() {
           form.elements['CACHE_IMAGE_SIGNATURES'].checked = json.other.cacheImageSignatures !== false;
         if (form.elements['CACHE_THINKING'])
           form.elements['CACHE_THINKING'].checked = json.other.cacheThinking !== false;
+        if (form.elements['FIX_GEMINI_SCHEMA_REF'])
+          form.elements['FIX_GEMINI_SCHEMA_REF'].checked = json.other.fixGeminiSchemaRef !== false;
         if (form.elements['IMAGE_RETURN_BASE64'])
           form.elements['IMAGE_RETURN_BASE64'].checked = json.other.imageReturnBase64 === true;
         if (form.elements['FAKE_NON_STREAM'])
@@ -332,6 +334,7 @@ async function saveConfig(e) {
   jsonConfig.other.cacheToolSignatures = form.elements['CACHE_TOOL_SIGNATURES']?.checked ?? true;
   jsonConfig.other.cacheImageSignatures = form.elements['CACHE_IMAGE_SIGNATURES']?.checked ?? true;
   jsonConfig.other.cacheThinking = form.elements['CACHE_THINKING']?.checked ?? true;
+  jsonConfig.other.fixGeminiSchemaRef = form.elements['FIX_GEMINI_SCHEMA_REF']?.checked ?? true;
   jsonConfig.other.imageReturnBase64 = form.elements['IMAGE_RETURN_BASE64']?.checked || false;
   jsonConfig.other.fakeNonStream = form.elements['FAKE_NON_STREAM']?.checked ?? true;
 
@@ -368,6 +371,7 @@ async function saveConfig(e) {
         key === 'CACHE_TOOL_SIGNATURES' ||
         key === 'CACHE_IMAGE_SIGNATURES' ||
         key === 'CACHE_THINKING' ||
+        key === 'FIX_GEMINI_SCHEMA_REF' ||
         key === 'IMAGE_RETURN_BASE64' ||
         key === 'FAKE_NON_STREAM'
       ) {
